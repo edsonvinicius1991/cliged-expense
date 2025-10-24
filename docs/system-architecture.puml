@@ -1,0 +1,156 @@
+@startuml
+' UML 2.5 Component Architecture Diagram
+skinparam dpi 300
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam handwritten false
+skinparam ArrowColor #444444
+skinparam ComponentBackgroundColor #F8FAFC
+skinparam ComponentBorderColor #94A3B8
+skinparam NoteBackgroundColor #FFF9C4
+skinparam NoteBorderColor #D4AF37
+
+' =====================
+' Packages (logical grouping)
+' =====================
+package "Frontend (React/Vite)" as Frontend {
+  component "App.jsx" as App <<boundary>>
+  component "Router" as Router <<control>>
+  package "Pages" {
+    component "AdminDashboard.jsx" as Admin <<boundary>>
+    component "CollaboratorDashboard.jsx" as Colab <<boundary>>
+    component "ExpenseReportForm.jsx" as ReportForm <<boundary>>
+    component "ReportDetailsView.jsx" as ReportDetails <<boundary>>
+    component "HomePage.jsx" as Home <<boundary>>
+    component "LoginPage.jsx" as Login <<boundary>>
+  }
+  package "Components" {
+    component "ExportDialog.jsx" as ExportDialog <<control>>
+    component "CashFlowModal.jsx" as CashFlowModal <<control>>
+    component "CashControl.jsx" as CashControl <<control>>
+    component "MonthlyControl.jsx" as MonthlyControl <<control>>
+    component "ExpenseChart.jsx" as ExpenseChart <<control>>
+    component "ComboBox.jsx" as ComboBox <<entity>>
+    component "ReceiptViewerModal.jsx" as ReceiptViewer <<control>>
+    package "UI" {
+      component "use-toast.js" as UseToast <<entity>>
+    }
+  }
+  package "Lib" {
+    component "utils.js" as Utils <<entity>>
+    component "logAnalyzer.js" as LogAnalyzer <<entity>>
+  }
+}
+
+package "Browser Runtime" as Browser {
+  component "sessionStorage" as SessionStorage <<database>>
+  component "FileSaver (Download .txt/.md)" as FileSaver <<boundary>>
+}
+
+package "External Systems" as External {
+  component "Sistema TASY (Importador)" as TASY <<boundary>>
+  database "Banco de Dados TASY" as TASYDB
+}
+
+' =====================
+' Interfaces (provided/required)
+' =====================
+interface "IExportService" as IExport
+interface "ILoggingService" as ILogging
+interface "IUtils" as IUtils
+interface "IDataPersistence" as IData
+interface "IDownload" as IDownload
+
+ExportDialog -down- IExport : provides
+LogAnalyzer -down- ILogging : provides
+Utils -down- IUtils : provides
+SessionStorage -down- IData : provides
+FileSaver -down- IDownload : provides
+
+' ExportDialog requires utilities and logging
+ExportDialog ..> IUtils : requires
+ExportDialog ..> ILogging : requires
+ExportDialog ..> IData : requires
+ExportDialog ..> IDownload : requires
+
+' AdminDashboard composes ExportDialog
+Admin *-- ExportDialog : composição
+
+' App and Router manage pages
+App --> Router : inicializa rotas
+Router o-- Admin : contém
+Router o-- Colab
+Router o-- ReportForm
+Router o-- ReportDetails
+Router o-- Home
+Router o-- Login
+
+' ExportDialog interacts with Browser runtime
+ExportDialog ..> SessionStorage : persistência temporária
+ExportDialog ..> FileSaver : geração de arquivo
+
+' ExportDialog produces TASY report consumed externally
+ExportDialog --> TASY : arquivo .txt (pipe-separated)
+TASY --> TASYDB : gravação e validação
+TASYDB ..> TASY : respostas (sucesso/erros)
+
+' Chart and Controls use Utils
+ExpenseChart ..> Utils
+CashControl ..> Utils
+MonthlyControl ..> Utils
+ComboBox ..> Utils
+ReceiptViewer ..> Utils
+
+' Toast utility used broadly
+Admin ..> UseToast
+ExportDialog ..> UseToast
+ReportForm ..> UseToast
+
+' =====================
+' Notes for complex components
+' =====================
+note right of ExportDialog
+  ExportDialog.jsx
+  - Orquestra a exportação TASY (exportToTASY)
+  - Normaliza CPF, Unidade, Itens
+  - Formata dados e gera linhas
+  - Registra erros em sessionStorage
+  - Oferece download do .txt e relatório .md
+end note
+
+note right of LogAnalyzer
+  logAnalyzer.js
+  - analyzeErrors(errors): categoriza e sumariza
+  - generateMarkdownReport(errors): gera relatório .md
+end note
+
+note right of Utils
+  utils.js
+  - Funções auxiliares de formatação/normalização
+  - Reutilizadas por múltiplos componentes
+end note
+
+note right of TASY
+  Sistema TASY
+  - Importa arquivo .txt
+  - Valida códigos e CPFs
+  - Persiste no BD TASY
+end note
+
+' =====================
+' Legend
+' =====================
+legend left
+  Símbolos e Convenções (UML 2.5):
+  - <<boundary>>: Componente de borda/Interface com usuário/sistemas externos
+  - <<control>>: Componente controlador/orquestrador de lógica
+  - <<entity>>: Componente de dados/serviço utilitário
+  - <<database>>: Armazenamento de dados
+  - Composição (*--): vida de um componente gerenciada por outro
+  - Agregação (o--): contenção lógica (ex.: Router contém páginas)
+  - Dependência (..>): uso de funcionalidade externa
+  - Fornece Interface (-down-): componente oferece uma API
+  - Requer Interface (..>): componente exige uma API
+end legend
+
+@enduml

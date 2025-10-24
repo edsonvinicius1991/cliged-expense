@@ -1,0 +1,88 @@
+@startuml
+'title: Fluxo de Exportação de Relatório TASY\n'
+
+actor Usuario as U
+boundary "AdminDashboard.jsx" as AD
+control "ExportDialog.jsx" as ED
+entity "Validator/Formatter\n(exportToTASY)" as VF
+collections "Erros (sessionStorage)" as ERR
+boundary "FileSaver (Download .txt)" as FS
+database "Sistema TASY / Banco de Dados" as TASY
+
+' Legendas:
+' - Usuario: usuário final que aciona a exportação
+' - AdminDashboard.jsx: página com botão de exportação
+' - ExportDialog.jsx: componente que coordena a exportação
+' - Validator/Formatter (exportToTASY): função que valida e formata linhas
+' - Erros (sessionStorage): armazenamento temporário de inconsistências
+' - FileSaver: utilitário de download de arquivo .txt
+' - Sistema TASY: sistema externo que importa o arquivo e interage com BD
+
+U -> AD: Clique no botão "Exportar TASY"\n<<Evento de UI / DOM>>\n<<tempo ~10-50ms>>
+AD -> ED: openExportDialog(selectedReports)
+note right of ED
+  - Carrega dados dos relatórios selecionados
+  - Prepara estado do componente
+  - Exibe modal de confirmação
+  Formato: Array<Report> (JSON)
+  Tempo: ~20-80ms
+end note
+
+ED -> VF: exportToTASY(reports)
+note right of VF
+  Processamento:
+  1) Normaliza CPF (remove não dígitos, aceita vazio; default "00000000000")
+  2) Normaliza unidade e mapeia para código TASY
+  3) Filtra itens com valor 0 e inválidos
+  4) Formata data (ddMMyyyy) e valor (duas casas decimais)
+  5) Monta linhas pipe-separated
+  Formato de entrada: Array<Report> (JSON)
+  Formato de saída: { fileName: string, content: string, errors: Array<Err> }
+  Tempo: ~50-300ms para 50-200 itens
+end note
+
+VF -> ERR: sessionStorage.setItem('tasyExportErrors', JSON.stringify(errors))
+note right of ERR
+  Formato: JSON de erros (type, message, details)
+  Possíveis falhas:
+  - Excesso de dados no sessionStorage
+  - Erros não serializáveis
+  Tempo: ~1-5ms
+end note
+
+VF --> ED: Resultado da exportação (fileName, content, errors)
+
+ED -> FS: download(fileName, content)
+note right of FS
+  - Gera arquivo .txt com linhas TASY
+  - Dispara download para o usuário
+  Formato: texto (UTF-8) linhas com campos delimitados por '|'
+  Tempo: ~10-50ms
+end note
+
+alt Há erros
+ED -> ERR: analyzeErrors(errors) / generateMarkdownReport(errors)
+ED --> U: Oferece download de Relatório de Erros (.md)
+else Sem erros
+ED --> U: Notificação de sucesso
+end
+
+U -> TASY: Upload do arquivo .txt no importador do TASY
+note right of TASY
+  - Valida CPF (pode aceitar '00000000000' conforme regras locais)
+  - Valida código de unidade e datas
+  - Persiste no BD
+  Formato: texto .txt (pipe-separated)
+  Tempo: ~1-5s (dependendo da infraestrutura)
+end note
+
+TASY --> U: Resultado da importação (sucesso/erros)
+
+' Pontos de falha e validações:
+' - Clique/UI: botão desativado ou sem seleção de relatório
+' - ExportDialog: ausência de dados, estado inconsistente
+' - exportToTASY: CPF vazio/inválido, unidade sem mapeamento, valor 0, data inválida
+' - FileSaver: bloqueio de pop-up/download
+' - TASY: rejeição por formato/CNPJ/CPF/códigos inválidos
+
+@enduml
