@@ -42,6 +42,7 @@ import React, { useState, useEffect } from 'react';
         miscellaneous: [],
         advances: []
       });
+      const [cpfValidation, setCpfValidation] = useState({ isValid: true, message: "" });
       const [isCameraOpen, setIsCameraOpen] = useState(false);
       const [cameraCallback, setCameraCallback] = useState(null);
 
@@ -52,6 +53,45 @@ import React, { useState, useEffect } from 'react';
           .replace(/(\d{3})(\d)/, '$1.$2')
           .replace(/(\d{3})(\d{1,2})/, '$1-$2')
           .slice(0, 14);
+      };
+      
+      const validateCPF = (cpf) => {
+        // Remove caracteres não numéricos
+        const cleanCPF = cpf.replace(/[^\d]/g, '');
+        
+        // Verifica se tem 11 dígitos
+        if (cleanCPF.length !== 11) {
+          return { isValid: false, message: "CPF deve conter 11 dígitos" };
+        }
+        
+        // Verifica se todos os dígitos são iguais (caso inválido)
+        if (/^(\d)\1{10}$/.test(cleanCPF)) {
+          return { isValid: false, message: "CPF inválido" };
+        }
+        
+        // Validação do primeiro dígito verificador
+        let sum = 0;
+        for (let i = 0; i < 9; i++) {
+          sum += parseInt(cleanCPF.charAt(i)) * (10 - i);
+        }
+        let remainder = (sum * 10) % 11;
+        if (remainder === 10 || remainder === 11) remainder = 0;
+        if (remainder !== parseInt(cleanCPF.charAt(9))) {
+          return { isValid: false, message: "CPF inválido" };
+        }
+        
+        // Validação do segundo dígito verificador
+        sum = 0;
+        for (let i = 0; i < 10; i++) {
+          sum += parseInt(cleanCPF.charAt(i)) * (11 - i);
+        }
+        remainder = (sum * 10) % 11;
+        if (remainder === 10 || remainder === 11) remainder = 0;
+        if (remainder !== parseInt(cleanCPF.charAt(10))) {
+          return { isValid: false, message: "CPF inválido" };
+        }
+        
+        return { isValid: true, message: "CPF válido" };
       };
 
       useEffect(() => {
@@ -221,10 +261,12 @@ import React, { useState, useEffect } from 'react';
           return;
         }
 
-        if (formData.cpf.length !== 14) {
+        // Validação completa do CPF
+        const cpfValidationResult = validateCPF(formData.cpf);
+        if (!cpfValidationResult.isValid) {
             toast({
                 title: "CPF Inválido",
-                description: "Por favor, preencha o CPF completo.",
+                description: cpfValidationResult.message,
                 variant: "destructive"
             });
             return;
@@ -372,11 +414,28 @@ import React, { useState, useEffect } from 'react';
                     <Label className="font-semibold">CPF do Colaborador</Label>
                     <Input 
                       value={formData.cpf} 
-                      onChange={(e) => setFormData(prev => ({ ...prev, cpf: formatCPF(e.target.value) }))} 
+                      onChange={(e) => {
+                        const formattedCPF = formatCPF(e.target.value);
+                        setFormData(prev => ({ ...prev, cpf: formattedCPF }));
+                        
+                        // Só valida se tiver pelo menos alguns dígitos
+                        if (formattedCPF.replace(/[^\d]/g, '').length >= 3) {
+                          const validation = validateCPF(formattedCPF);
+                          setCpfValidation(validation);
+                        } else {
+                          setCpfValidation({ isValid: true, message: "" });
+                        }
+                      }} 
                       placeholder="000.000.000-00" 
-                      className="mt-1" 
+                      className={`mt-1 ${formData.cpf && !cpfValidation.isValid ? 'border-red-500 focus:ring-red-500' : formData.cpf && cpfValidation.isValid && formData.cpf.replace(/[^\d]/g, '').length === 11 ? 'border-green-500 focus:ring-green-500' : ''}`}
                       maxLength="14"
                     />
+                    {formData.cpf && !cpfValidation.isValid && (
+                      <p className="text-red-500 text-sm mt-1">{cpfValidation.message}</p>
+                    )}
+                    {formData.cpf && cpfValidation.isValid && formData.cpf.replace(/[^\d]/g, '').length === 11 && (
+                      <p className="text-green-500 text-sm mt-1">CPF válido</p>
+                    )}
                   </div>
                   <div>
                     <Label className="font-semibold">Unidade</Label>
