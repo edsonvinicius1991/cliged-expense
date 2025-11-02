@@ -298,20 +298,20 @@ export const db = {
       return data || []
     },
 
-    async update(id, userData) {
-    const { data, error } = await supabase
-      .from('users')
-      .update({
-        ...userData,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single()
-    
-    if (error) throw error
-    return data
-  },
+    async update(id, updates) {
+      const { data, error } = await supabase
+        .from('expense_items')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single()
+      
+      if (error) throw error
+      return data
+    },
 
   async getByEmail(email) {
     const { data, error } = await supabase

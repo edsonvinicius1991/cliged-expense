@@ -138,10 +138,20 @@ import React, { useState, useEffect } from 'react';
               const miscellaneous = items.filter(i => i.category === 'DIVERSOS').map(mapItem);
               const advances = items.filter(i => i.category === 'ADIANTAMENTOS').map(mapItem);
 
+              // Formatar CPF salvo como dígitos para visualização
+              const formatCpfDigits = (digits) => {
+                if (!digits) return ''
+                const only = String(digits).replace(/\D/g, '').slice(0, 11)
+                return only
+                  .replace(/(\d{3})(\d)/, '$1.$2')
+                  .replace(/(\d{3})(\d)/, '$1.$2')
+                  .replace(/(\d{3})(\d{1,2})/, '$1-$2')
+              }
+
               setFormData({
                 date: detailedReport?.period_start ? detailedReport.period_start.split('T')[0] : (detailedReport?.created_at ? detailedReport.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
-                userName: user?.username || user?.email?.split('@')[0] || '',
-                cpf: '',
+                userName: detailedReport?.employee_name || user?.username || user?.email?.split('@')[0] || '',
+                cpf: formatCpfDigits(detailedReport?.employee_cpf || ''),
                 unit: detailedReport?.department || '',
                 sector: detailedReport?.project_code || '',
                 transport,
@@ -360,6 +370,9 @@ import React, { useState, useEffect } from 'react';
         });
 
         // Montar payload compatível com o schema atual de expense_reports
+        // Normalizar CPF: remover não-dígitos e limitar a 11
+        const normalizedCpf = (formData.cpf || '').replace(/\D/g, '').slice(0, 11)
+        
         const reportData = {
           user_id: user.id,
           title: `Relatório ${formData.date}`,
@@ -373,7 +386,7 @@ import React, { useState, useEffect } from 'react';
           project_code: formData.sector || null,
           total_amount: totals.totalAmount,
           employee_name: formData.userName,
-          employee_cpf: formData.cpf
+          employee_cpf: normalizedCpf
         };
 
         try {
@@ -384,32 +397,77 @@ import React, { useState, useEffect } from 'react';
             savedReport = await db.expenseReports.create(reportData);
           }
 
-          // Inserir itens na expense_items vinculados ao relatório
+          // Sincronizar itens na expense_items vinculados ao relatório (create/update/delete)
           const sections = [
             { key: 'transport', category: 'TRANSPORTE' },
             { key: 'food', category: 'ALIMENTACAO' },
             { key: 'miscellaneous', category: 'DIVERSOS' },
             { key: 'advances', category: 'ADIANTAMENTOS' }
           ];
+          // Carregar itens existentes (apenas no modo edição)
+          let existingItems = []
+          if (editingReport?.id) {
+            try {
+              existingItems = await db.expenses.getByReportId(editingReport.id)
+            } catch (e) {
+              existingItems = []
+            }
+          }
 
+          const existingMap = new Map((existingItems || []).map(it => [it.id, it]))
+          const formItems = []
           for (const sec of sections) {
             for (const item of formData[sec.key]) {
+              formItems.push({ sec, item })
+            }
+          }
+
+          const formIds = new Set()
+          for (const { sec, item } of formItems) {
+            const payload = {
+              expense_report_id: savedReport.id,
+              category: sec.category,
+              description: item.description || `${sec.category} - ${formData.unit}`,
+              amount: parseFloat(item.amount) || 0,
+              currency: item.currency || 'BRL',
+              expense_date: item.date || formData.date,
+              receipt_url: item.receiptUrl || null,
+              receipt_filename: item.receiptName || null,
+              is_reimbursable: sec.key === 'advances' ? false : true,
+              employee_name: formData.userName,
+              employee_cpf: normalizedCpf
+            }
+
+            if (item.id && existingMap.has(item.id)) {
+              // update existente
+              formIds.add(item.id)
               try {
-                await db.expenses.create({
-                  expense_report_id: savedReport.id,
-                  category: sec.category,
-                  description: item.description || `${sec.category} - ${formData.unit}`,
-                  amount: parseFloat(item.amount) || 0,
-                  currency: item.currency || 'BRL',
-                  expense_date: item.date || formData.date,
-                  receipt_url: item.receiptUrl || null,
-                  receipt_filename: item.receiptName || null,
-                  is_reimbursable: sec.key === 'advances' ? false : true,
-                  employee_name: formData.userName,
-                  employee_cpf: formData.cpf
-                })
+                await db.expenses.update(item.id, payload)
+              } catch (e) {
+                console.error('Falha ao atualizar item:', e)
+              }
+            } else {
+              // create novo
+              try {
+                const created = await db.expenses.create(payload)
+                if (created?.id) {
+                  formIds.add(created.id)
+                }
               } catch (e) {
                 console.error('Falha ao inserir item:', e)
+              }
+            }
+          }
+
+          // Deletar itens removidos no formulário (apenas no modo edição)
+          if (editingReport?.id && existingItems?.length) {
+            for (const old of existingItems) {
+              if (!formIds.has(old.id)) {
+                try {
+                  await db.expenses.delete(old.id)
+                } catch (e) {
+                  console.error('Falha ao deletar item removido:', e)
+                }
               }
             }
           }

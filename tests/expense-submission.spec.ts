@@ -33,8 +33,8 @@ test.describe('Submissão e edição de relatório', () => {
     await inputs[0].fill('25')
     await page.getByPlaceholder('Descreva a despesa').fill('Uber até clínica')
 
-    // Enviar para aprovação
-    await page.getByRole('button', { name: /enviar para aprovação/i }).click()
+  // Enviar para aprovação
+  await page.getByRole('button', { name: /enviar para aprovação/i }).click()
 
     // Voltar ao dashboard
     await page.getByRole('button', { name: /voltar/i }).click()
@@ -47,6 +47,30 @@ test.describe('Submissão e edição de relatório', () => {
     // Verificar se o formulário está preenchido
     await expect(page.getByPlaceholder('Digite seu nome completo')).toHaveValue('Usuário Teste')
     await expect(page.getByPlaceholder('000.000.000-00')).toHaveValue('123.456.789-09')
-    await expect(page.getByRole('combobox').first()).toHaveValue('nova_iguacu')
+  await expect(page.getByRole('combobox').first()).toHaveValue('nova_iguacu')
+
+    // Validar no banco: CPF normalizado (apenas dígitos)
+    const { data: user } = await sb.auth.signInWithPassword({ email: 'user@cliged.com', password: 'user1234' })
+    expect(user?.user?.id).toBeTruthy()
+
+    const { data: reports } = await sb
+      .from('expense_reports')
+      .select('id, employee_cpf')
+      .eq('user_id', user!.user!.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    expect(reports && reports.length > 0).toBeTruthy()
+    expect(reports![0].employee_cpf).toMatch(/^[0-9]{11}$/)
+    expect(reports![0].employee_cpf).toBe('12345678909')
   })
 })
+import { createClient } from '@supabase/supabase-js'
+import dotenv from 'dotenv'
+
+dotenv.config()
+
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL as string
+const SUPABASE_ANON = process.env.VITE_SUPABASE_ANON_KEY as string
+
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON)
