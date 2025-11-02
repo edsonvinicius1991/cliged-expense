@@ -12,6 +12,7 @@ import React, { useState, useEffect, useMemo } from 'react';
     import JSZip from 'jszip';
     import ComboBox from '@/components/ComboBox';
     import ReceiptViewerModal from '@/components/ReceiptViewerModal';
+    import { db } from '@/lib/supabase';
 
     const AdminDashboard = ({ user, onLogout, onViewDetails }) => {
       const [reports, setReports] = useState([]);
@@ -42,9 +43,39 @@ import React, { useState, useEffect, useMemo } from 'react';
         return () => window.removeEventListener('storage', handleStorageChange);
       }, []);
 
-      const loadReports = () => {
-        const allReports = JSON.parse(localStorage.getItem('expenseReports') || '[]');
-        setReports(allReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+      const loadReports = async () => {
+        try {
+          const allReports = await db.expenseReports.getAll();
+          // Buscar informações dos usuários para cada relatório
+          const reportsWithUserInfo = await Promise.all(
+            allReports.map(async (report) => {
+              try {
+                const userInfo = await db.appUsers.getById(report.user_id);
+                return {
+                  ...report,
+                  userName: userInfo?.name || 'Usuário não encontrado',
+                  userEmail: userInfo?.email || ''
+                };
+              } catch (error) {
+                console.error('Erro ao buscar usuário:', error);
+                return {
+                  ...report,
+                  userName: 'Usuário não encontrado',
+                  userEmail: ''
+                };
+              }
+            })
+          );
+          setReports(reportsWithUserInfo.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+        } catch (error) {
+          console.error('Erro ao carregar relatórios:', error);
+          toast({
+            title: "Erro",
+            description: "Não foi possível carregar os relatórios. Tente novamente.",
+            variant: "destructive",
+          });
+          setReports([]);
+        }
       };
 
       const filteredReports = useMemo(() => {
@@ -53,7 +84,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 
           const searchMatch = searchTerm.toLowerCase() === '' ||
             report.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            report.id.toLowerCase().includes(searchTerm.toLowerCase());
+            report.id.toString().toLowerCase().includes(searchTerm.toLowerCase());
           
           const statusMatch = statusFilter === 'all' || report.status === statusFilter;
 
@@ -85,19 +116,17 @@ import React, { useState, useEffect, useMemo } from 'react';
     }, [reports]);
 
       const stats = useMemo(() => {
-        const [year, month] = selectedMonth.split('-').map(Number);
-        
-        const approvedReportsThisMonth = reports.filter(r => {
-          const reportDate = new Date(r.date);
-          return r.status === 'approved' &&
-                 reportDate.getFullYear() === year &&
-                 (reportDate.getMonth() + 1) === month;
-        });
+        const pendingCount = reports.filter(r => r.status === 'pending').length;
+        const currentMonth = new Date().toISOString().slice(0, 7);
+        const monthlyReports = reports.filter(r => 
+          r.created_at.slice(0, 7) === selectedMonth
+        );
+        const totalApproved = monthlyReports
+          .filter(r => r.status === 'approved')
+          .reduce((sum, r) => sum + (r.amount_to_receive || 0), 0);
 
-        const totalApproved = approvedReportsThisMonth.reduce((sum, r) => sum + (r.totalAmount || 0), 0);
-        
         return {
-          pendingCount: reports.filter(r => r.status === 'pending').length,
+          pendingCount,
           totalApproved,
         };
       }, [reports, selectedMonth]);
@@ -108,34 +137,46 @@ import React, { useState, useEffect, useMemo } from 'react';
         setShowApprovalDialog(true);
       };
 
-      const confirmApproval = (approved, reason = '') => {
-        const updatedReports = reports.map(r => {
-          if (r.id === selectedReport.id) {
-            const signature = {
-              name: user.name,
-              role: user.role,
-              timestamp: new Date().toISOString(),
-              action: approved ? 'approved' : 'rejected'
-            };
-            return {
-              ...r,
-              status: approved ? 'approved' : 'rejected',
-              rejectionReason: approved ? null : reason,
-              signatures: [...(r.signatures || []), signature],
-            };
-          }
-          return r;
-        });
-        localStorage.setItem('expenseReports', JSON.stringify(updatedReports));
-        setReports(updatedReports);
-        setShowApprovalDialog(false);
-        setSelectedReport(null);
-        setApprovalAction(null);
-        toast({
-          title: `Relatório ${approved ? "aprovado" : "rejeitado"}!`,
-          description: `O colaborador será notificado.`,
-          className: approved ? 'bg-success text-success-foreground' : 'bg-destructive text-destructive-foreground'
-        });
+      const confirmApproval = async (approved, reason = '') => {
+        try {
+          const updateData = {
+            status: approved ? 'approved' : 'rejected',
+            rejection_reason: approved ? null : reason,
+            approved_by: approved ? user.id : null,
+            approved_at: approved ? new Date().toISOString() : null
+          };
+
+          await db.expenseReports.update(selectedReport.id, updateData);
+          
+          // Atualizar a lista local
+          const updatedReports = reports.map(r => {
+            if (r.id === selectedReport.id) {
+              return {
+                ...r,
+                ...updateData
+              };
+            }
+            return r;
+          });
+          
+          setReports(updatedReports);
+          setShowApprovalDialog(false);
+          setSelectedReport(null);
+          setApprovalAction(null);
+          
+          toast({
+            title: `Relatório ${approved ? "aprovado" : "rejeitado"}!`,
+            description: `O colaborador será notificado.`,
+            className: approved ? 'bg-success text-success-foreground' : 'bg-destructive text-destructive-foreground'
+          });
+        } catch (error) {
+          console.error('Erro ao atualizar relatório:', error);
+          toast({
+            title: "Erro",
+            description: "Não foi possível atualizar o relatório. Tente novamente.",
+            variant: "destructive",
+          });
+        }
       };
 
       const openExportDialog = (type) => {
@@ -283,8 +324,8 @@ import React, { useState, useEffect, useMemo } from 'react';
                         filteredReports.map((report) => (
                           <tr key={report.id} className="bg-white border-b border-border hover:bg-muted">
                             <td className="px-6 py-4 font-medium text-foreground whitespace-nowrap">{report.userName}</td>
-                            <td className="px-6 py-4">{new Date(report.date).toLocaleDateString('pt-BR')}</td>
-                            <td className="px-6 py-4 font-semibold">{formatCurrency(report.totalAmount + (report.totalAdvances || 0))}</td>
+                            <td className="px-6 py-4">{new Date(report.created_at).toLocaleDateString('pt-BR')}</td>
+                            <td className="px-6 py-4 font-semibold">{formatCurrency(report.total_amount || 0)}</td>
                             <td className="px-6 py-4">{getStatusBadge(report.status)}</td>
                             <td className="px-6 py-4 text-center">
                               <div className="flex items-center justify-center gap-2">

@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
     import ExpenseReportForm from '@/pages/ExpenseReportForm';
     import ReportDetailsView from '@/pages/ReportDetailsView';
     import { Toaster } from '@/components/ui/toaster';
+    import { auth } from '@/lib/supabase';
 
     function App() {
       const [currentPage, setCurrentPage] = useState('home');
@@ -16,13 +17,36 @@ import React, { useState, useEffect } from 'react';
       const [viewingReport, setViewingReport] = useState(null);
 
       useEffect(() => {
-        const savedUser = localStorage.getItem('currentUser');
-        if (savedUser) {
-          const user = JSON.parse(savedUser);
-          setCurrentUser(user);
-          setUserType(user.type);
-          setCurrentPage(user.type === 'admin' ? 'admin-dashboard' : 'collaborator-dashboard');
-        }
+        // Verificar se há usuário logado no sistema de autenticação
+        const checkCurrentUser = () => {
+          const user = auth.getCurrentUser();
+          if (user) {
+            setCurrentUser(user);
+            setUserType(user.type);
+            setCurrentPage(user.type === 'admin' ? 'admin-dashboard' : 'collaborator-dashboard');
+          }
+        };
+
+        checkCurrentUser();
+
+        // Monitorar mudanças no estado de autenticação
+        const unsubscribe = auth.onAuthStateChange(({ user }) => {
+          if (user) {
+            setCurrentUser(user);
+            setUserType(user.type);
+            setCurrentPage(user.type === 'admin' ? 'admin-dashboard' : 'collaborator-dashboard');
+          } else {
+            setCurrentUser(null);
+            setUserType(null);
+            setCurrentPage('home');
+          }
+        });
+
+        return () => {
+          if (typeof unsubscribe === 'function') {
+            unsubscribe();
+          }
+        };
       }, []);
 
       const handleSelectUserType = (type) => {
@@ -32,15 +56,22 @@ import React, { useState, useEffect } from 'react';
 
       const handleLogin = (user) => {
         setCurrentUser(user);
-        localStorage.setItem('currentUser', JSON.stringify(user));
         setCurrentPage(user.type === 'admin' ? 'admin-dashboard' : 'collaborator-dashboard');
       };
 
-      const handleLogout = () => {
-        setCurrentUser(null);
-        setUserType(null);
-        localStorage.removeItem('currentUser');
-        setCurrentPage('home');
+      const handleLogout = async () => {
+        try {
+          await auth.signOut();
+          setCurrentUser(null);
+          setUserType(null);
+          setCurrentPage('home');
+        } catch (error) {
+          console.error('Erro ao fazer logout:', error);
+          // Mesmo com erro, limpar o estado local
+          setCurrentUser(null);
+          setUserType(null);
+          setCurrentPage('home');
+        }
       };
 
       const handleCreateReport = () => {

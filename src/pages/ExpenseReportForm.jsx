@@ -8,6 +8,7 @@ import React, { useState, useEffect } from 'react';
     import CameraCapture from '@/components/CameraCapture';
     import ComboBox from '@/components/ComboBox';
     import { Select } from '@/components/ui/select';
+    import { db, uploadReceipt, deleteReceipt, getReceiptUrl } from '@/lib/supabase';
 
     const units = [
       { value: 'macae', label: 'Macaé' },
@@ -95,46 +96,59 @@ import React, { useState, useEffect } from 'react';
       };
 
       useEffect(() => {
-        if (editingReport) {
-          const reportData = { ...editingReport };
-          const categories = ['transport', 'food', 'miscellaneous', 'advances'];
-          const receiptsData = JSON.parse(localStorage.getItem('receiptsData') || '{}');
-      
-          categories.forEach(category => {
-            if (reportData[category]) {
-              reportData[category] = reportData[category].map(item => {
-                if (item.receiptId && receiptsData[item.receiptId]) {
-                  return { ...item, receipt: receiptsData[item.receiptId] };
-                }
-                return item;
-              });
+        const loadReportData = async () => {
+          if (editingReport) {
+            const reportData = { ...editingReport };
+            const categories = ['transport_expenses', 'food_expenses', 'miscellaneous_expenses', 'advances'];
+        
+            // Carrega URLs dos recibos para cada categoria
+            for (const category of categories) {
+              const categoryKey = category.replace('_expenses', '');
+              if (reportData[category]) {
+                reportData[categoryKey] = await Promise.all(
+                  reportData[category].map(async (item) => {
+                    if (item.receiptPath) {
+                      try {
+                        const receiptUrl = await getReceiptUrl(item.receiptPath);
+                        return { ...item, receiptUrl };
+                      } catch (error) {
+                        console.error('Erro ao carregar URL do recibo:', error);
+                        return item;
+                      }
+                    }
+                    return item;
+                  })
+                );
+              }
             }
-          });
 
-          setFormData({
-            date: reportData.date,
-            userName: reportData.userName || '',
-            cpf: reportData.cpf || '',
-            unit: reportData.unit || '',
-            sector: reportData.sector || '',
-            transport: reportData.transport || [],
-            food: reportData.food || [],
-            miscellaneous: reportData.miscellaneous || [],
-            advances: reportData.advances || [],
-          });
-        } else {
-             setFormData({
-                date: new Date().toISOString().split('T')[0],
-                userName: '',
-                cpf: '',
-                unit: '',
-                sector: '',
-                transport: [],
-                food: [],
-                miscellaneous: [],
-                advances: []
+            setFormData({
+              date: reportData.created_at ? reportData.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+              userName: reportData.employee_name || '',
+              cpf: reportData.employee_cpf || '',
+              unit: reportData.unit || '',
+              sector: reportData.sector || '',
+              transport: reportData.transport_expenses || [],
+              food: reportData.food_expenses || [],
+              miscellaneous: reportData.miscellaneous_expenses || [],
+              advances: reportData.advances || [],
             });
-        }
+          } else {
+               setFormData({
+                  date: new Date().toISOString().split('T')[0],
+                  userName: '',
+                  cpf: '',
+                  unit: '',
+                  sector: '',
+                  transport: [],
+                  food: [],
+                  miscellaneous: [],
+                  advances: []
+              });
+          }
+        };
+
+        loadReportData();
       }, [editingReport, user]);
 
 
@@ -147,26 +161,29 @@ import React, { useState, useEffect } from 'react';
             description: '',
             amount: 0,
             currency: 'BRL',
-            receipt: null,
             receiptName: null,
-            receiptId: null,
+            receiptPath: null,
+            receiptUrl: null,
           }]
         }));
       };
 
-      const removeExpenseLine = (category, id) => {
-        setFormData(prev => {
-          const itemToRemove = prev[category].find(item => item.id === id);
-          if (itemToRemove && itemToRemove.receiptId) {
-            const receiptsData = JSON.parse(localStorage.getItem('receiptsData') || '{}');
-            delete receiptsData[itemToRemove.receiptId];
-            localStorage.setItem('receiptsData', JSON.stringify(receiptsData));
+      const removeExpenseLine = async (category, id) => {
+        const itemToRemove = formData[category].find(item => item.id === id);
+        
+        // Remove o recibo do Supabase Storage se existir
+        if (itemToRemove && itemToRemove.receiptPath) {
+          try {
+            await deleteReceipt(itemToRemove.receiptPath);
+          } catch (error) {
+            console.error('Erro ao deletar recibo:', error);
           }
-          return {
-            ...prev,
-            [category]: prev[category].filter(item => item.id !== id)
-          };
-        });
+        }
+
+        setFormData(prev => ({
+          ...prev,
+          [category]: prev[category].filter(item => item.id !== id)
+        }));
       };
 
       const updateExpenseLine = (category, id, field, value) => {
@@ -178,7 +195,7 @@ import React, { useState, useEffect } from 'react';
         }));
       };
 
-      const handleFileChange = (category, id, file) => {
+      const handleFileChange = async (category, id, file) => {
         if (!file) return;
 
         const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
@@ -192,38 +209,61 @@ import React, { useState, useEffect } from 'react';
           return;
         }
 
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const receiptId = `receipt_${Date.now()}`;
-          const receiptsData = JSON.parse(localStorage.getItem('receiptsData') || '{}');
-          receiptsData[receiptId] = reader.result;
-          try {
-            localStorage.setItem('receiptsData', JSON.stringify(receiptsData));
-            updateExpenseLine(category, id, 'receiptId', receiptId);
-            updateExpenseLine(category, id, 'receiptName', file.name);
-            updateExpenseLine(category, id, 'receipt', null);
-            toast({ title: "Comprovante anexado!", description: "Arquivo carregado com sucesso." });
-          } catch(e) {
-             toast({ title: "Erro de armazenamento", description: "Não foi possível salvar o comprovante. O armazenamento está cheio.", variant: "destructive" });
+        try {
+          // Remove o recibo anterior se existir
+          const currentItem = formData[category].find(item => item.id === id);
+          if (currentItem && currentItem.receiptPath) {
+            await deleteReceipt(currentItem.receiptPath);
           }
-        };
-        reader.readAsDataURL(file);
+
+          // Faz upload do novo recibo
+          const result = await uploadReceipt(file, user.id);
+          
+          updateExpenseLine(category, id, 'receiptPath', result.path);
+          updateExpenseLine(category, id, 'receiptName', file.name);
+          updateExpenseLine(category, id, 'receiptUrl', result.publicUrl);
+          
+          toast({ title: "Comprovante anexado!", description: "Arquivo carregado com sucesso." });
+        } catch (error) {
+          console.error('Erro ao fazer upload do recibo:', error);
+          toast({ 
+            title: "Erro no upload", 
+            description: "Não foi possível fazer upload do comprovante. Tente novamente.", 
+            variant: "destructive" 
+          });
+        }
       };
 
       const openCamera = (category, id) => {
-        setCameraCallback(() => (imageData) => {
-          const receiptId = `receipt_${Date.now()}`;
-          const receiptsData = JSON.parse(localStorage.getItem('receiptsData') || '{}');
-          receiptsData[receiptId] = imageData;
-           try {
-            localStorage.setItem('receiptsData', JSON.stringify(receiptsData));
-            updateExpenseLine(category, id, 'receiptId', receiptId);
-            updateExpenseLine(category, id, 'receiptName', `captura_${Date.now()}.jpg`);
-            updateExpenseLine(category, id, 'receipt', null);
+        setCameraCallback(() => async (imageData) => {
+          try {
+            // Remove o recibo anterior se existir
+            const currentItem = formData[category].find(item => item.id === id);
+            if (currentItem && currentItem.receiptPath) {
+              await deleteReceipt(currentItem.receiptPath);
+            }
+
+            // Converte base64 para blob
+            const response = await fetch(imageData);
+            const blob = await response.blob();
+            const file = new File([blob], `captura_${Date.now()}.jpg`, { type: 'image/jpeg' });
+
+            // Faz upload do recibo
+            const result = await uploadReceipt(file, user.id);
+            
+            updateExpenseLine(category, id, 'receiptPath', result.path);
+            updateExpenseLine(category, id, 'receiptName', file.name);
+            updateExpenseLine(category, id, 'receiptUrl', result.publicUrl);
+            
             setIsCameraOpen(false);
             toast({ title: "Foto capturada!", description: "Comprovante anexado com sucesso." });
-          } catch(e) {
-            toast({ title: "Erro de armazenamento", description: "Não foi possível salvar o comprovante. O armazenamento está cheio.", variant: "destructive" });
+          } catch (error) {
+            console.error('Erro ao fazer upload da foto:', error);
+            toast({ 
+              title: "Erro no upload", 
+              description: "Não foi possível salvar a foto. Tente novamente.", 
+              variant: "destructive" 
+            });
           }
         });
         setIsCameraOpen(true);
@@ -251,7 +291,7 @@ import React, { useState, useEffect } from 'react';
         return { totalAmount, totalAdvances, toReceive, toReturn };
       };
 
-      const handleSave = (submit = false) => {
+      const handleSave = async (submit = false) => {
         if (!formData.userName || !formData.cpf || !formData.unit || !formData.sector) {
           toast({
             title: "Campos obrigatórios",
@@ -292,44 +332,47 @@ import React, { useState, useEffect } from 'react';
             });
         });
 
-        const report = {
-          ...reportDataForStorage,
-          id: editingReport?.id || Date.now().toString(),
-          userId: user.id,
-          userName: formData.userName,
-          cpf: formData.cpf,
+        const reportData = {
+          user_id: user.id,
+          description: `${formData.unit} - ${formData.sector}`,
           status: submit ? 'pending' : 'draft',
-          ...totals,
-          createdAt: editingReport?.createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          signatures: editingReport?.signatures || []
+          total_amount: totals.totalAmount,
+          amount_to_receive: totals.toReceive,
+          amount_to_return: totals.toReturn,
+          transport_expenses: reportDataForStorage.transport,
+          food_expenses: reportDataForStorage.food,
+          miscellaneous_expenses: reportDataForStorage.miscellaneous,
+          advances: reportDataForStorage.advances,
+          employee_name: formData.userName,
+          employee_cpf: formData.cpf,
+          unit: formData.unit,
+          sector: formData.sector
         };
 
-        const allReports = JSON.parse(localStorage.getItem('expenseReports') || '[]');
-        const existingIndex = allReports.findIndex(r => r.id === report.id);
-        
-        if (existingIndex >= 0) {
-          allReports[existingIndex] = report;
-        } else {
-          allReports.push(report);
-        }
-
         try {
-            localStorage.setItem('expenseReports', JSON.stringify(allReports));
-            toast({
-              title: submit ? "Relatório enviado!" : "Relatório salvo!",
-              description: submit ? "Seu relatório foi enviado para aprovação." : "Suas alterações foram salvas.",
-              className: submit ? 'bg-success text-success-foreground' : ''
-            });
-            if (submit) {
-              onBack();
-            }
-        } catch (e) {
-            toast({
-                title: "Erro ao Salvar",
-                description: "Não foi possível salvar o relatório. O armazenamento do navegador pode estar cheio.",
-                variant: "destructive"
-            });
+          let savedReport;
+          if (editingReport?.id) {
+            savedReport = await db.expenseReports.update(editingReport.id, reportData);
+          } else {
+            savedReport = await db.expenseReports.create(reportData);
+          }
+
+          toast({
+            title: submit ? "Relatório enviado!" : "Relatório salvo!",
+            description: submit ? "Seu relatório foi enviado para aprovação." : "Suas alterações foram salvas.",
+            className: submit ? 'bg-success text-success-foreground' : ''
+          });
+          
+          if (submit) {
+            onBack();
+          }
+        } catch (error) {
+          console.error('Erro ao salvar relatório:', error);
+          toast({
+            title: "Erro ao Salvar",
+            description: "Não foi possível salvar o relatório. Tente novamente.",
+            variant: "destructive"
+          });
         }
       };
 
@@ -364,10 +407,23 @@ import React, { useState, useEffect } from 'react';
                         <Label className="text-xs text-muted-foreground">Comprovante</Label>
                         <div className="flex gap-2 mt-1">
                           <label className="flex-1 flex items-center justify-center px-3 py-2 border border-input rounded-lg cursor-pointer hover:bg-accent transition-colors">
-                            <Upload className="w-4 h-4 mr-2" /><span className="text-sm truncate">{item.receiptName ? '✓' : 'Upload'}</span>
+                            <Upload className="w-4 h-4 mr-2" />
+                            <span className="text-sm truncate">
+                              {item.receiptName ? `✓ ${item.receiptName}` : 'Upload'}
+                            </span>
                             <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={(e) => handleFileChange(category, item.id, e.target.files[0])} className="hidden" />
                           </label>
                           <Button size="sm" variant="outline" onClick={() => openCamera(category, item.id)}><Camera className="w-4 h-4" /></Button>
+                          {item.receiptUrl && (
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              onClick={() => window.open(item.receiptUrl, '_blank')}
+                              title="Visualizar recibo"
+                            >
+                              👁️
+                            </Button>
+                          )}
                         </div>
                       </div>
                       <Button variant="outline" size="icon" onClick={() => removeExpenseLine(category, item.id)} className="border-destructive/50 text-destructive hover:bg-destructive/10 h-10 w-10">

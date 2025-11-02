@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
     import { Plus, FileText, Clock, CheckCircle, XCircle, LogOut, DollarSign, Calendar } from 'lucide-react';
     import { Button } from '@/components/ui/button';
     import { useToast } from '@/components/ui/use-toast';
+    import { db } from '@/lib/supabase';
 
     const CollaboratorDashboard = ({
       user,
@@ -19,11 +20,19 @@ import React, { useState, useEffect } from 'react';
         loadReports();
       }, [user]);
 
-      const loadReports = () => {
-        const allReports = JSON.parse(localStorage.getItem('expenseReports') || '[]');
-        const userReports = allReports.filter(r => r.userId === user.id);
-        setReports(userReports);
-      };
+      const loadReports = async () => {
+    try {
+      const userReports = await db.expenseReports.getByUserId(user.id);
+      setReports(userReports || []);
+    } catch (error) {
+      console.error('Erro ao carregar relatórios:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar os relatórios",
+        variant: "destructive",
+      });
+    }
+  };
 
       const getStatusBadge = status => {
         const badges = {
@@ -63,7 +72,7 @@ import React, { useState, useEffect } from 'react';
         pending: reports.filter(r => r.status === 'pending').length,
         approved: reports.filter(r => r.status === 'approved').length,
         rejected: reports.filter(r => r.status === 'rejected').length,
-        totalApprovedToReceive: reports.filter(r => r.status === 'approved').reduce((sum, r) => sum + (r.toReceive || 0), 0)
+        totalApprovedToReceive: reports.filter(r => r.status === 'approved').reduce((sum, r) => sum + (r.amount_to_receive || 0), 0)
       };
 
       const StatCard = ({ title, value, icon: Icon, colorClass, delay }) => (
@@ -136,17 +145,17 @@ import React, { useState, useEffect } from 'react';
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1">
                           <h3 className="font-semibold text-foreground text-lg mb-1">
-                            Relatório #{report.id.slice(0, 8)}
+                            Relatório #{report.id.toString().slice(0, 8)}
                           </h3>
                           <div className="flex items-center gap-4 text-sm text-muted-foreground">
                             <span className="flex items-center gap-1.5">
                               <Calendar className="w-4 h-4" />
-                              {new Date(report.date).toLocaleDateString('pt-BR')}
+                              {new Date(report.created_at).toLocaleDateString('pt-BR')}
                             </span>
-                            {report.sector && (
+                            {report.description && (
                               <span className="flex items-center gap-1.5">
                                 <FileText className="w-4 h-4" />
-                                {report.sector}
+                                {report.description}
                               </span>
                             )}
                           </div>
@@ -157,21 +166,21 @@ import React, { useState, useEffect } from 'react';
                       <div className="grid grid-cols-3 gap-4 pt-3 border-t border-border">
                         <div>
                           <p className="text-xs text-muted-foreground mb-1">Total Gasto</p>
-                          <p className="font-semibold text-foreground">{formatCurrency(report.totalAmount || 0)}</p>
+                          <p className="font-semibold text-foreground">{formatCurrency(report.total_amount || 0)}</p>
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground mb-1">A Receber</p>
-                          <p className="font-semibold text-secondary">{formatCurrency(report.toReceive || 0)}</p>
+                          <p className="font-semibold text-secondary">{formatCurrency(report.amount_to_receive || 0)}</p>
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground mb-1">A Devolver</p>
-                          <p className="font-semibold text-destructive">{formatCurrency(report.toReturn || 0)}</p>
+                          <p className="font-semibold text-destructive">{formatCurrency(report.amount_to_return || 0)}</p>
                         </div>
                       </div>
 
-                      {report.rejectionReason && <div className="mt-3 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+                      {report.rejection_reason && <div className="mt-3 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
                           <p className="text-sm text-destructive">
-                            <strong>Motivo da rejeição:</strong> {report.rejectionReason}
+                            <strong>Motivo da rejeição:</strong> {report.rejection_reason}
                           </p>
                         </div>}
                     </motion.div>)}
