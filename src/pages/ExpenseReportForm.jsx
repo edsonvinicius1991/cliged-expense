@@ -43,6 +43,7 @@ import React, { useState, useEffect } from 'react';
         miscellaneous: [],
         advances: []
       });
+      const [isLoadingData, setIsLoadingData] = useState(false);
       const [cpfValidation, setCpfValidation] = useState({ isValid: true, message: "" });
       const [isCameraOpen, setIsCameraOpen] = useState(false);
       const [cameraCallback, setCameraCallback] = useState(null);
@@ -97,54 +98,80 @@ import React, { useState, useEffect } from 'react';
 
       useEffect(() => {
         const loadReportData = async () => {
-          if (editingReport) {
-            const reportData = { ...editingReport };
-            const categories = ['transport_expenses', 'food_expenses', 'miscellaneous_expenses', 'advances'];
-        
-            // Carrega URLs dos recibos para cada categoria
-            for (const category of categories) {
-              const categoryKey = category.replace('_expenses', '');
-              if (reportData[category]) {
-                reportData[categoryKey] = await Promise.all(
-                  reportData[category].map(async (item) => {
-                    if (item.receiptPath) {
-                      try {
-                        const receiptUrl = await getReceiptUrl(item.receiptPath);
-                        return { ...item, receiptUrl };
-                      } catch (error) {
-                        console.error('Erro ao carregar URL do recibo:', error);
-                        return item;
-                      }
-                    }
-                    return item;
-                  })
-                );
-              }
-            }
+          try {
+            setIsLoadingData(true);
 
-            setFormData({
-              date: reportData.created_at ? reportData.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-              userName: reportData.employee_name || '',
-              cpf: reportData.employee_cpf || '',
-              unit: reportData.unit || '',
-              sector: reportData.sector || '',
-              transport: reportData.transport_expenses || [],
-              food: reportData.food_expenses || [],
-              miscellaneous: reportData.miscellaneous_expenses || [],
-              advances: reportData.advances || [],
-            });
-          } else {
-               setFormData({
-                  date: new Date().toISOString().split('T')[0],
-                  userName: '',
-                  cpf: '',
-                  unit: '',
-                  sector: '',
-                  transport: [],
-                  food: [],
-                  miscellaneous: [],
-                  advances: []
+            // Caso de edição: buscar detalhes do relatório e itens
+            if (editingReport?.id) {
+              // Buscar relatório do banco para campos atuais
+              let detailedReport = null;
+              try {
+                detailedReport = await db.expenseReports.getById(editingReport.id);
+              } catch (e) {
+                console.warn('Falha ao buscar detalhes do relatório, usando objeto passado:', e);
+                detailedReport = editingReport;
+              }
+
+              // Buscar itens do relatório
+              let items = [];
+              try {
+                items = await db.expenses.getByReportId(editingReport.id);
+              } catch (e) {
+                console.warn('Falha ao buscar itens do relatório:', e);
+                items = [];
+              }
+
+              // Agrupar itens por categoria
+              const mapItem = (it) => ({
+                id: it.id,
+                date: it.expense_date ? it.expense_date.split('T')[0] : formData.date,
+                description: it.description || '',
+                amount: it.amount || 0,
+                currency: it.currency || 'BRL',
+                receiptName: it.receipt_filename || null,
+                receiptPath: null,
+                receiptUrl: it.receipt_url || null
               });
+
+              const transport = items.filter(i => i.category === 'TRANSPORTE').map(mapItem);
+              const food = items.filter(i => i.category === 'ALIMENTACAO').map(mapItem);
+              const miscellaneous = items.filter(i => i.category === 'DIVERSOS').map(mapItem);
+              const advances = items.filter(i => i.category === 'ADIANTAMENTOS').map(mapItem);
+
+              setFormData({
+                date: detailedReport?.period_start ? detailedReport.period_start.split('T')[0] : (detailedReport?.created_at ? detailedReport.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+                userName: user?.username || user?.email?.split('@')[0] || '',
+                cpf: '',
+                unit: detailedReport?.department || '',
+                sector: detailedReport?.project_code || '',
+                transport,
+                food,
+                miscellaneous,
+                advances
+              });
+            } else {
+              // Modo criação: limpar e inicializar
+              setFormData({
+                date: new Date().toISOString().split('T')[0],
+                userName: '',
+                cpf: '',
+                unit: '',
+                sector: '',
+                transport: [],
+                food: [],
+                miscellaneous: [],
+                advances: []
+              });
+            }
+          } catch (error) {
+            console.error('Erro ao carregar dados do relatório:', error);
+            toast({
+              title: 'Erro ao carregar dados',
+              description: 'Não foi possível carregar as informações do relatório selecionado.',
+              variant: 'destructive'
+            });
+          } finally {
+            setIsLoadingData(false);
           }
         };
 
@@ -344,7 +371,9 @@ import React, { useState, useEffect } from 'react';
           period_end: formData.date,
           department: formData.unit || null,
           project_code: formData.sector || null,
-          total_amount: totals.totalAmount
+          total_amount: totals.totalAmount,
+          employee_name: formData.userName,
+          employee_cpf: formData.cpf
         };
 
         try {
@@ -375,7 +404,9 @@ import React, { useState, useEffect } from 'react';
                   expense_date: item.date || formData.date,
                   receipt_url: item.receiptUrl || null,
                   receipt_filename: item.receiptName || null,
-                  is_reimbursable: sec.key === 'advances' ? false : true
+                  is_reimbursable: sec.key === 'advances' ? false : true,
+                  employee_name: formData.userName,
+                  employee_cpf: formData.cpf
                 })
               } catch (e) {
                 console.error('Falha ao inserir item:', e)
@@ -505,6 +536,11 @@ import React, { useState, useEffect } from 'react';
             </header>
 
             <main className="container mx-auto px-4 py-8 max-w-7xl">
+              {isLoadingData && (
+                <div className="mb-6 p-4 border border-border rounded-lg bg-muted text-muted-foreground">
+                  Carregando dados do relatório...
+                </div>
+              )}
               <div className="bg-white rounded-lg shadow-custom-light border border-border p-5 mb-6">
                 <h2 className="text-xl font-bold text-foreground mb-4">Informações Gerais</h2>
                 <div className="grid md:grid-cols-5 gap-6">
