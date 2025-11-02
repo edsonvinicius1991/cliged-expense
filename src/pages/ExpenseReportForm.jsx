@@ -8,7 +8,7 @@ import React, { useState, useEffect } from 'react';
     import CameraCapture from '@/components/CameraCapture';
     import ComboBox from '@/components/ComboBox';
     import { Select } from '@/components/ui/select';
-    import { db, supabase, uploadReceipt, deleteReceipt, getReceiptUrl } from '@/lib/supabase';
+    import { db, supabase, uploadReceipt, deleteReceipt, getReceiptUrl, getStoragePathFromPublicUrl } from '@/lib/supabase';
 
     const units = [
       { value: 'macae', label: 'Macaé' },
@@ -47,6 +47,48 @@ import React, { useState, useEffect } from 'react';
       const [cpfValidation, setCpfValidation] = useState({ isValid: true, message: "" });
       const [isCameraOpen, setIsCameraOpen] = useState(false);
       const [cameraCallback, setCameraCallback] = useState(null);
+      const [viewerOpen, setViewerOpen] = useState(false);
+      const [viewerItem, setViewerItem] = useState(null);
+      const [viewerContentUrl, setViewerContentUrl] = useState(null);
+      const [viewerLoading, setViewerLoading] = useState(false);
+      const [viewerError, setViewerError] = useState(null);
+
+      useEffect(() => {
+        const fetchViewerContent = async () => {
+          if (!viewerOpen || !viewerItem) return;
+          setViewerError(null);
+          setViewerLoading(true);
+          try {
+            const isPdf = (viewerItem.filename || '').toLowerCase().endsWith('.pdf') || (viewerItem.url || '').toLowerCase().endsWith('.pdf');
+            if (isPdf) {
+              const key = getStoragePathFromPublicUrl(viewerItem.url);
+              if (!key) throw new Error('Chave do Storage não encontrada para o recibo');
+              const { data, error } = await supabase.storage.from('receipts').download(key);
+              if (error) throw error;
+              const blobUrl = URL.createObjectURL(data);
+              setViewerContentUrl(blobUrl);
+            } else {
+              // Para imagens, usar URL pública diretamente
+              setViewerContentUrl(viewerItem.url);
+            }
+          } catch (e) {
+            console.error('Erro ao carregar conteúdo do recibo:', e);
+            setViewerError('Não foi possível carregar o comprovante.');
+          } finally {
+            setViewerLoading(false);
+          }
+        };
+
+        fetchViewerContent();
+
+        return () => {
+          if (viewerContentUrl && viewerContentUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(viewerContentUrl);
+          }
+          setViewerContentUrl(null);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [viewerOpen, viewerItem]);
 
       const formatCPF = (value) => {
         const onlyNumbers = value.replace(/[^\d]/g, '');
@@ -557,7 +599,15 @@ import React, { useState, useEffect } from 'react';
                             <Button 
                               size="sm" 
                               variant="outline" 
-                              onClick={() => window.open(item.receiptUrl, '_blank')}
+                              onClick={() => {
+                                setViewerItem({
+                                  url: item.receiptUrl,
+                                  filename: item.receiptName,
+                                  id: item.id,
+                                  category
+                                })
+                                setViewerOpen(true)
+                              }}
                               title="Visualizar recibo"
                             >
                               👁️
@@ -579,6 +629,91 @@ import React, { useState, useEffect } from 'react';
 
       return (
         <>
+          {viewerOpen && viewerItem && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+              <div className="relative bg-white rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
+                <div className="p-4 border-b flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-foreground">Comprovante</h2>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={async () => {
+                      try {
+                        const key = getStoragePathFromPublicUrl(viewerItem.url)
+                        if (key) {
+                          await deleteReceipt(key)
+                        }
+                        // limpar dados no form e no banco
+                        setFormData(prev => ({
+                          ...prev,
+                          [viewerItem.category]: prev[viewerItem.category].map(it => it.id === viewerItem.id ? {
+                            ...it,
+                            receiptUrl: null,
+                            receiptName: null,
+                            receiptPath: null
+                          } : it)
+                        }))
+                        try {
+                          await db.expenses.update(viewerItem.id, {
+                            receipt_url: null,
+                            receipt_filename: null
+                          })
+                        } catch(_){ }
+                        setViewerOpen(false)
+                      } catch (e) {
+                        console.error('Erro ao excluir recibo:', e)
+                      }
+                    }}>Excluir</Button>
+                    <label className="inline-flex items-center justify-center text-sm border px-3 py-2 rounded-md cursor-pointer">
+                      Trocar arquivo
+                      <input type="file" accept="image/jpeg,image/png,application/pdf" className="hidden" onChange={async (e) => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        try {
+                          const result = await uploadReceipt(file, editingReport?.id || user.id)
+                          if (result.success) {
+                            setFormData(prev => ({
+                              ...prev,
+                              [viewerItem.category]: prev[viewerItem.category].map(it => it.id === viewerItem.id ? {
+                                ...it,
+                                receiptUrl: result.publicUrl,
+                                receiptName: file.name
+                              } : it)
+                            }))
+                            try {
+                              await db.expenses.update(viewerItem.id, {
+                                receipt_url: result.publicUrl,
+                                receipt_filename: file.name
+                              })
+                            } catch(_){ }
+                          }
+                        } catch (err) {
+                          console.error('Erro ao atualizar recibo:', err)
+                        }
+                      }} />
+                    </label>
+                    <Button variant="ghost" onClick={() => setViewerOpen(false)}>Fechar</Button>
+                  </div>
+                </div>
+                <div className="flex-1 p-4 overflow-auto">
+                  {viewerLoading && (
+                    <div className="text-center text-muted-foreground">Carregando comprovante...</div>
+                  )}
+                  {!viewerLoading && viewerError && (
+                    <div className="text-center">
+                      <p className="text-destructive mb-3">{viewerError}</p>
+                      <Button variant="outline" onClick={() => window.open(viewerItem.url, '_blank')}>Abrir em nova aba</Button>
+                    </div>
+                  )}
+                  {!viewerLoading && !viewerError && viewerContentUrl && (
+                    (viewerItem.filename?.toLowerCase().endsWith('.pdf') || (viewerItem.url || '').toLowerCase().endsWith('.pdf')) ? (
+                      <iframe src={viewerContentUrl} title="Comprovante PDF" className="w-full h-[70vh]" />
+                    ) : (
+                      <img src={viewerContentUrl} alt={viewerItem.filename || 'Comprovante'} className="max-w-full max-h-[70vh] object-contain" />
+                    )
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           {isCameraOpen && <CameraCapture onCapture={cameraCallback} onCancel={() => setIsCameraOpen(false)} />}
           <div className="min-h-screen bg-white">
             <header className="bg-white shadow-sm border-b border-border">

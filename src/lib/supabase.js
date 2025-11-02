@@ -548,7 +548,7 @@ export const receiptStorage = {
       // Gerar nome único para o arquivo
       const fileExt = file.name.split('.').pop()
       const fileName = `${expenseReportId}_${Date.now()}.${fileExt}`
-      const filePath = `receipts/${fileName}`
+      const filePath = `reports/${expenseReportId}/${fileName}`
 
       // Upload do arquivo
       const { data, error } = await supabase.storage
@@ -566,7 +566,7 @@ export const receiptStorage = {
 
       return {
         success: true,
-        filePath: data.path,
+        filePath: filePath,
         publicUrl: urlData.publicUrl,
         fileName: fileName
       }
@@ -610,6 +610,19 @@ export const receiptStorage = {
       console.error('Erro ao obter URL do recibo:', error)
       return null
     }
+  }
+}
+
+// Helper para extrair o object key do Storage a partir da URL pública
+export function getStoragePathFromPublicUrl(url) {
+  try {
+    const parts = url.split('/object/public/receipts/')
+    if (parts.length === 2) {
+      return parts[1]
+    }
+    return null
+  } catch (_) {
+    return null
   }
 }
 
