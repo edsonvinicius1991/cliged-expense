@@ -35,3 +35,17 @@ body {
     --radius: 0.5rem;
   }
 }
+/* Contenção de layout para evitar overflow de filhos */
+.contain-parent {
+  position: relative;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.contain-child {
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  word-break: break-word;
+}
+/* (revert) removidas classes de largura 50% */

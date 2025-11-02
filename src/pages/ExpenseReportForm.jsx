@@ -576,15 +576,19 @@ import React, { useState, useEffect } from 'react';
           {formData[category].length === 0 ? (
             <p className="text-muted-foreground text-center py-4">Nenhuma despesa adicionada</p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-4 contain-parent">
               {formData[category].map((item) => (
-                <div key={item.id} className="border border-border rounded-lg p-4 bg-muted">
-                  <div className="grid md:grid-cols-5 gap-4">
+                <div key={item.id} className="border border-border rounded-lg p-4 bg-muted overflow-hidden contain-child">
+                  
+                  <div className="grid md:grid-cols-6 gap-4 min-w-0">
+                    
                     <div><Label className="text-xs text-muted-foreground">Data</Label><Input type="date" value={item.date} onChange={(e) => updateExpenseLine(category, item.id, 'date', e.target.value)} className="mt-1" /></div>
                     <div className="md:col-span-2"><Label className="text-xs text-muted-foreground">Descrição</Label><Input value={item.description} onChange={(e) => updateExpenseLine(category, item.id, 'description', e.target.value)} placeholder="Descreva a despesa" className="mt-1" /></div>
-                    <div><Label className="text-xs text-muted-foreground">Valor</Label><Input type="number" step="0.01" value={item.amount} onChange={(e) => updateExpenseLine(category, item.id, 'amount', e.target.value)} className="mt-1" /></div>
+                    <div ><Label className="text-xs text-muted-foreground">Valor</Label><Input type="number" step="0.01" value={item.amount} onChange={(e) => updateExpenseLine(category, item.id, 'amount', e.target.value)} className="mt-1" /></div>
+                    
                     <div className="flex items-end gap-2">
-                      <div className="flex-1">
+                        
+                      <div className="flex-1 min-w-0">
                         <Label className="text-xs text-muted-foreground">Comprovante</Label>
                         <div className="flex gap-2 mt-1">
                           <label
@@ -612,7 +616,7 @@ import React, { useState, useEffect } from 'react';
                                 aria-label={item.receiptName}
                                 data-tooltip={item.receiptName}
                               >
-                                {`✓ ${item.receiptName.length > 15 ? item.receiptName.slice(0, 20) + '...' : item.receiptName}`}
+                                {`✓ ${item.receiptName.length > 20 ? item.receiptName.slice(0, 20) + '...' : item.receiptName}`}
                               </span>
                             ) : (
                               <span className="text-sm">Upload</span>
@@ -627,12 +631,11 @@ import React, { useState, useEffect } from 'react';
                             )}
                           </label>
                           <Button size="sm" variant="outline" onClick={() => openCamera(category, item.id)}><Camera className="w-4 h-4" /></Button>
-                          {/* Botão de visualização removido: ação de visualizar está no label acima */}
+                           <Button variant="outline" size="sm" onClick={() => removeExpenseLine(category, item.id)} className="border-destructive/50 text-destructive hover:bg-destructive/10 h-10 w-10">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       </div>
-                      <Button variant="outline" size="icon" onClick={() => removeExpenseLine(category, item.id)} className="border-destructive/50 text-destructive hover:bg-destructive/10 h-10 w-10">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
                     </div>
                   </div>
                 </div>
