@@ -587,32 +587,38 @@ import React, { useState, useEffect } from 'react';
                       <div className="flex-1">
                         <Label className="text-xs text-muted-foreground">Comprovante</Label>
                         <div className="flex gap-2 mt-1">
-                          <label className="flex-1 flex items-center justify-center px-3 py-2 border border-input rounded-lg cursor-pointer hover:bg-accent transition-colors">
-                            <Upload className="w-4 h-4 mr-2" />
-                            <span className="text-sm truncate">
-                              {item.receiptName ? `✓ ${item.receiptName}` : 'Upload'}
-                            </span>
-                            <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={(e) => handleFileChange(category, item.id, e.target.files[0])} className="hidden" />
-                          </label>
-                          <Button size="sm" variant="outline" onClick={() => openCamera(category, item.id)}><Camera className="w-4 h-4" /></Button>
-                          {item.receiptUrl && (
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
-                              onClick={() => {
+                          <label
+                            className="flex-1 flex items-center justify-center px-3 py-2 border border-input rounded-lg cursor-pointer hover:bg-accent transition-colors"
+                            onClick={(e) => {
+                              if (item.receiptUrl) {
+                                e.preventDefault();
+                                e.stopPropagation();
                                 setViewerItem({
                                   url: item.receiptUrl,
                                   filename: item.receiptName,
                                   id: item.id,
                                   category
-                                })
-                                setViewerOpen(true)
-                              }}
-                              title="Visualizar recibo"
-                            >
-                              👁️
-                            </Button>
-                          )}
+                                });
+                                setViewerOpen(true);
+                              }
+                            }}
+                            title={item.receiptUrl ? 'Visualizar comprovante' : 'Upload de comprovante'}
+                          >
+                            <Upload className="w-4 h-4 mr-2" />
+                            <span className="text-sm truncate">
+                              {item.receiptName ? `✓ ${item.receiptName}` : 'Upload'}
+                            </span>
+                            {!item.receiptUrl && (
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,application/pdf"
+                                onChange={(e) => handleFileChange(category, item.id, e.target.files[0])}
+                                className="hidden"
+                              />
+                            )}
+                          </label>
+                          <Button size="sm" variant="outline" onClick={() => openCamera(category, item.id)}><Camera className="w-4 h-4" /></Button>
+                          {/* Botão de visualização removido: ação de visualizar está no label acima */}
                         </div>
                       </div>
                       <Button variant="outline" size="icon" onClick={() => removeExpenseLine(category, item.id)} className="border-destructive/50 text-destructive hover:bg-destructive/10 h-10 w-10">
