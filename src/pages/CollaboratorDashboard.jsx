@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
     import { useToast } from '@/components/ui/use-toast';
     import { db } from '@/lib/supabase';
 
-    const CollaboratorDashboard = ({
+  const CollaboratorDashboard = ({
       user,
       onLogout,
       onCreateReport,
@@ -72,11 +72,31 @@ import React, { useState, useEffect } from 'react';
 
       const stats = {
         total: reports.length,
-        pending: reports.filter(r => r.status === 'pending').length,
-        approved: reports.filter(r => r.status === 'approved').length,
-        rejected: reports.filter(r => r.status === 'rejected').length,
-        totalApprovedToReceive: reports.filter(r => r.status === 'approved').reduce((sum, r) => sum + (r.amount_to_receive || 0), 0)
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        awaitingPayment: 0
       };
+
+      // Normaliza e conta por status, reativo a mudanças em reports
+      const computeStatusCounts = (list) => {
+        try {
+          const counts = { total: list.length || 0, pending: 0, approved: 0, rejected: 0, awaitingPayment: 0 };
+          const normalize = (s) => (s || '').toString().trim().toUpperCase();
+          for (const r of (list || [])) {
+            const st = normalize(r.status);
+            if (st === 'PENDENTE' || st === 'PENDING') counts.pending++;
+            else if (st === 'APROVADO' || st === 'APPROVED') counts.approved++;
+            else if (st === 'REJEITADO' || st === 'REJECTED') counts.rejected++;
+            else if (st === 'AGUARDANDO_PAGAMENTO' || st === 'AWAITING_PAYMENT' || st === 'AGUARDANDO PAGAMENTO') counts.awaitingPayment++;
+          }
+          return counts;
+        } catch (_) {
+          return { total: 0, pending: 0, approved: 0, rejected: 0, awaitingPayment: 0 };
+        }
+      };
+
+      const statusCounts = React.useMemo(() => computeStatusCounts(reports), [reports]);
 
       const StatCard = ({ title, value, icon: Icon, colorClass, delay }) => (
         <motion.div 
@@ -113,11 +133,11 @@ import React, { useState, useEffect } from 'react';
 
           <main className="container mx-auto px-4 py-8">
             <div className="grid md:grid-cols-5 gap-4 mb-8">
-                <StatCard title="Total" value={stats.total} icon={FileText} colorClass="text-primary" delay={0.1} />
-                <StatCard title="Pendentes" value={stats.pending} icon={Clock} colorClass="text-warning-foreground" delay={0.2} />
-                <StatCard title="Aprovados" value={stats.approved} icon={CheckCircle} colorClass="text-secondary" delay={0.3} />
-                <StatCard title="Rejeitados" value={stats.rejected} icon={XCircle} colorClass="text-destructive" delay={0.4} />
-                <StatCard title="A Receber" value={formatCurrency(stats.totalApprovedToReceive)} icon={DollarSign} colorClass="text-primary" delay={0.5} />
+                <StatCard title="Total" value={statusCounts.total} icon={FileText} colorClass="text-primary" delay={0.1} />
+                <StatCard title="Pendentes" value={statusCounts.pending} icon={Clock} colorClass="text-warning-foreground" delay={0.2} />
+                <StatCard title="Aprovados" value={statusCounts.approved} icon={CheckCircle} colorClass="text-secondary" delay={0.3} />
+                <StatCard title="Rejeitados" value={statusCounts.rejected} icon={XCircle} colorClass="text-destructive" delay={0.4} />
+                <StatCard title="A Receber" value={statusCounts.awaitingPayment} icon={DollarSign} colorClass="text-primary" delay={0.5} />
             </div>
 
             <div className="bg-white rounded-lg shadow-custom-light border border-border p-5 mb-6">
