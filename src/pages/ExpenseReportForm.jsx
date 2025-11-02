@@ -605,9 +605,18 @@ import React, { useState, useEffect } from 'react';
                             title={item.receiptUrl ? 'Visualizar comprovante' : 'Upload de comprovante'}
                           >
                             <Upload className="w-4 h-4 mr-2" />
-                            <span className="text-sm truncate">
-                              {item.receiptName ? `✓ ${item.receiptName}` : 'Upload'}
-                            </span>
+                            {item.receiptName ? (
+                              <span
+                                className="text-[12px] truncate max-w-[140px] sm:max-w-[180px] md:max-w-[220px] lg:max-w-[260px]"
+                                title={item.receiptName}
+                                aria-label={item.receiptName}
+                                data-tooltip={item.receiptName}
+                              >
+                                {`✓ ${item.receiptName.length > 15 ? item.receiptName.slice(0, 20) + '...' : item.receiptName}`}
+                              </span>
+                            ) : (
+                              <span className="text-sm">Upload</span>
+                            )}
                             {!item.receiptUrl && (
                               <input
                                 type="file"
