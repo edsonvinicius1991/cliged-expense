@@ -291,7 +291,7 @@ export const db = {
       const { data, error } = await supabase
         .from('expense_items')
         .select('*')
-        .eq('report_id', reportId)
+        .eq('expense_report_id', reportId)
         .order('created_at', { ascending: true })
       
       if (error) throw error
@@ -354,7 +354,7 @@ export const db = {
       const { error } = await supabase
         .from('expense_items')
         .delete()
-        .eq('report_id', reportId)
+        .eq('expense_report_id', reportId)
       
       if (error) throw error
     }

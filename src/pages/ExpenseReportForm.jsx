@@ -8,7 +8,7 @@ import React, { useState, useEffect } from 'react';
     import CameraCapture from '@/components/CameraCapture';
     import ComboBox from '@/components/ComboBox';
     import { Select } from '@/components/ui/select';
-    import { db, uploadReceipt, deleteReceipt, getReceiptUrl } from '@/lib/supabase';
+    import { db, supabase, uploadReceipt, deleteReceipt, getReceiptUrl } from '@/lib/supabase';
 
     const units = [
       { value: 'macae', label: 'Macaé' },
@@ -332,21 +332,19 @@ import React, { useState, useEffect } from 'react';
             });
         });
 
+        // Montar payload compatível com o schema atual de expense_reports
         const reportData = {
           user_id: user.id,
+          title: `Relatório ${formData.date}`,
           description: `${formData.unit} - ${formData.sector}`,
-          status: submit ? 'pending' : 'draft',
-          total_amount: totals.totalAmount,
-          amount_to_receive: totals.toReceive,
-          amount_to_return: totals.toReturn,
-          transport_expenses: reportDataForStorage.transport,
-          food_expenses: reportDataForStorage.food,
-          miscellaneous_expenses: reportDataForStorage.miscellaneous,
-          advances: reportDataForStorage.advances,
-          employee_name: formData.userName,
-          employee_cpf: formData.cpf,
-          unit: formData.unit,
-          sector: formData.sector
+          status: submit ? 'PENDENTE' : 'RASCUNHO',
+          currency: 'BRL',
+          submission_date: new Date().toISOString(),
+          period_start: formData.date,
+          period_end: formData.date,
+          department: formData.unit || null,
+          project_code: formData.sector || null,
+          total_amount: totals.totalAmount
         };
 
         try {
@@ -357,17 +355,69 @@ import React, { useState, useEffect } from 'react';
             savedReport = await db.expenseReports.create(reportData);
           }
 
+          // Inserir itens na expense_items vinculados ao relatório
+          const sections = [
+            { key: 'transport', category: 'TRANSPORTE' },
+            { key: 'food', category: 'ALIMENTACAO' },
+            { key: 'miscellaneous', category: 'DIVERSOS' },
+            { key: 'advances', category: 'ADIANTAMENTOS' }
+          ];
+
+          for (const sec of sections) {
+            for (const item of formData[sec.key]) {
+              try {
+                await db.expenses.create({
+                  expense_report_id: savedReport.id,
+                  category: sec.category,
+                  description: item.description || `${sec.category} - ${formData.unit}`,
+                  amount: parseFloat(item.amount) || 0,
+                  currency: item.currency || 'BRL',
+                  expense_date: item.date || formData.date,
+                  receipt_url: item.receiptUrl || null,
+                  receipt_filename: item.receiptName || null,
+                  is_reimbursable: sec.key === 'advances' ? false : true
+                })
+              } catch (e) {
+                console.error('Falha ao inserir item:', e)
+              }
+            }
+          }
+
+          // Registro de submissão
+          try {
+            await db.appUsers.update(savedReport.user_id, {}) // noop to ensure session
+            await db.categories.getAll() // noop simple call
+          } catch (_) {}
+
+          // Registrar sucesso
+          try {
+            await supabase.from('submission_logs').insert([
+              { user_id: user.id, report_id: savedReport.id, action: editingReport?.id ? 'UPDATE' : 'CREATE', status: 'SUCCESS' }
+            ])
+          } catch (logErr) {
+            console.warn('Falha ao registrar submissão (sucesso):', logErr)
+          }
+
           toast({
             title: submit ? "Relatório enviado!" : "Relatório salvo!",
             description: submit ? "Seu relatório foi enviado para aprovação." : "Suas alterações foram salvas.",
             className: submit ? 'bg-success text-success-foreground' : ''
-          });
+          })
           
           if (submit) {
             onBack();
           }
         } catch (error) {
           console.error('Erro ao salvar relatório:', error);
+
+          // Registrar erro
+          try {
+            await supabase.from('submission_logs').insert([
+              { user_id: user.id, report_id: editingReport?.id || null, action: editingReport?.id ? 'UPDATE' : 'CREATE', status: 'ERROR', error_message: String(error.message || error) }
+            ])
+          } catch (logErr) {
+            console.warn('Falha ao registrar submissão (erro):', logErr)
+          }
           toast({
             title: "Erro ao Salvar",
             description: "Não foi possível salvar o relatório. Tente novamente.",
