@@ -210,10 +210,7 @@ export const db = {
         .from('expense_reports')
         .select(`
           *,
-          expenses (
-            *,
-            categories (*)
-          )
+          expense_items (*)
         `)
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
@@ -227,10 +224,7 @@ export const db = {
         .from('expense_reports')
         .select(`
           *,
-          expenses (
-            *,
-            categories (*)
-          )
+          expense_items (*)
         `)
         .order('created_at', { ascending: false })
       
@@ -243,10 +237,7 @@ export const db = {
         .from('expense_reports')
         .select(`
           *,
-          expenses (
-            *,
-            categories (*)
-          )
+          expense_items (*)
         `)
         .eq('id', id)
         .single()
@@ -284,7 +275,7 @@ export const db = {
   expenses: {
     async create(expenseData) {
       const { data, error } = await supabase
-        .from('expenses')
+        .from('expense_items')
         .insert([{
           ...expenseData,
           created_at: new Date().toISOString()
@@ -298,11 +289,8 @@ export const db = {
 
     async getByReportId(reportId) {
       const { data, error } = await supabase
-        .from('expenses')
-        .select(`
-          *,
-          categories (*)
-        `)
+        .from('expense_items')
+        .select('*')
         .eq('report_id', reportId)
         .order('created_at', { ascending: true })
       
@@ -355,7 +343,7 @@ export const db = {
 
     async delete(id) {
       const { error } = await supabase
-        .from('expenses')
+        .from('expense_items')
         .delete()
         .eq('id', id)
       
@@ -364,7 +352,7 @@ export const db = {
 
     async deleteByReportId(reportId) {
       const { error } = await supabase
-        .from('expenses')
+        .from('expense_items')
         .delete()
         .eq('report_id', reportId)
       

@@ -17,11 +17,14 @@ import React, { useState, useEffect } from 'react';
       } = useToast();
 
       useEffect(() => {
-        loadReports();
+        if (user?.id) {
+          loadReports();
+        }
       }, [user]);
 
       const loadReports = async () => {
     try {
+      if (!user || !user.id) return;
       const userReports = await db.expenseReports.getByUserId(user.id);
       setReports(userReports || []);
     } catch (error) {
