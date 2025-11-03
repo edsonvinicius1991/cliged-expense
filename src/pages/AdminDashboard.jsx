@@ -82,10 +82,11 @@ import React, { useState, useEffect, useMemo } from 'react';
         return reports.filter(report => {
           if (report.status === 'draft') return false;
 
-          const searchMatch = searchTerm.toLowerCase() === '' ||
-            report.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            report.id.toString().toLowerCase().includes(searchTerm.toLowerCase());
-          
+          const name = (report.employee_name || report.userName || '').toLowerCase();
+          const idStr = (report.id || '').toString().toLowerCase();
+          const term = (searchTerm || '').toLowerCase();
+          const searchMatch = term === '' || name.includes(term) || idStr.includes(term);
+
           const statusMatch = statusFilter === 'all' || report.status === statusFilter;
 
           return searchMatch && statusMatch;
@@ -323,7 +324,7 @@ import React, { useState, useEffect, useMemo } from 'react';
                       ) : (
                         filteredReports.map((report) => (
                           <tr key={report.id} className="bg-white border-b border-border hover:bg-muted">
-                            <td className="px-6 py-4 font-medium text-foreground whitespace-nowrap">{report.userName}</td>
+                            <td className="px-6 py-4 font-medium text-foreground whitespace-nowrap">{report.employee_name || report.userName || 'N/A'}</td>
                             <td className="px-6 py-4">{new Date(report.created_at).toLocaleDateString('pt-BR')}</td>
                             <td className="px-6 py-4 font-semibold">{formatCurrency(report.total_amount || 0)}</td>
                             <td className="px-6 py-4">{getStatusBadge(report.status)}</td>
