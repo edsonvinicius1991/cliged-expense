@@ -17,37 +17,64 @@ import React, { useState, useEffect } from 'react';
       const [viewingReport, setViewingReport] = useState(null);
 
       useEffect(() => {
-        // Verificar se há usuário logado no sistema de autenticação
-        const checkCurrentUser = () => {
-          const user = auth.getCurrentUser();
-          if (user) {
-            setCurrentUser(user);
-            setUserType(user.type);
-            setCurrentPage(user.type === 'admin' ? 'admin-dashboard' : 'collaborator-dashboard');
-          }
-        };
+  // Verificar se há usuário logado no sistema de autenticação
+  const checkCurrentUser = async () => {
+    try {
+      const user = await auth.getCurrentUser();
+      console.log('Usuário recuperado na inicialização:', user);
+      
+      if (user) {
+        setCurrentUser(user);
+        setUserType(user.role?.toLowerCase() || 'user');
+        setCurrentPage(user.role?.toLowerCase() === 'admin' ? 'admin-dashboard' : 'collaborator-dashboard');
+      } else {
+        console.log('Nenhuma sessão ativa encontrada');
+      }
+    } catch (error) {
+      console.error('Erro ao verificar usuário atual:', error);
+    }
+  };
 
-        checkCurrentUser();
+  checkCurrentUser();
 
-        // Monitorar mudanças no estado de autenticação
-        const unsubscribe = auth.onAuthStateChange(({ user }) => {
-          if (user) {
-            setCurrentUser(user);
-            setUserType(user.type);
-            setCurrentPage(user.type === 'admin' ? 'admin-dashboard' : 'collaborator-dashboard');
-          } else {
-            setCurrentUser(null);
-            setUserType(null);
-            setCurrentPage('home');
-          }
-        });
+  // Monitorar mudanças no estado de autenticação
+  const unsubscribe = auth.onAuthStateChange(async (event, session) => {
+    console.log('Auth state change:', event, session);
+    
+    if (session?.user) {
+      // Buscar perfil complementar
+      let profile = null;
+      try {
+        profile = await db.appUsers.getById(session.user.id);
+      } catch (profileError) {
+        console.warn('Perfil não encontrado:', profileError);
+      }
+      
+      const userData = {
+        id: session.user.id,
+        email: session.user.email,
+        username: session.user.user_metadata?.username || session.user.email.split('@')[0],
+        role: session.user.user_metadata?.role || 'USER',
+        type: session.user.user_metadata?.role?.toLowerCase() || 'user',
+        profile: profile
+      };
+      
+      setCurrentUser(userData);
+      setUserType(userData.role?.toLowerCase() || 'user');
+      setCurrentPage(userData.role?.toLowerCase() === 'admin' ? 'admin-dashboard' : 'collaborator-dashboard');
+    } else {
+      setCurrentUser(null);
+      setUserType(null);
+      setCurrentPage('home');
+    }
+  });
 
-        return () => {
-          if (typeof unsubscribe === 'function') {
-            unsubscribe();
-          }
-        };
-      }, []);
+  return () => {
+    if (typeof unsubscribe === 'function') {
+      unsubscribe();
+    }
+  };
+}, []);
 
       const handleSelectUserType = (type) => {
         setUserType(type);

@@ -517,9 +517,40 @@ export const auth = {
     }
   },
 
-  getCurrentUser() {
-    return supabase.auth.getUser()
-  },
+  async getCurrentUser() {
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession()
+    
+    if (error) {
+      console.error('Erro ao obter sessão:', error)
+      return null
+    }
+    
+    if (!session || !session.user) {
+      return null
+    }
+    
+    // Buscar perfil complementar (opcional)
+    let profile = null
+    try {
+      profile = await db.appUsers.getById(session.user.id)
+    } catch (profileError) {
+      console.warn('Perfil não encontrado:', profileError)
+    }
+    
+    return {
+      id: session.user.id,
+      email: session.user.email,
+      username: session.user.user_metadata?.username || session.user.email.split('@')[0],
+      role: session.user.user_metadata?.role || 'USER',
+      type: session.user.user_metadata?.role?.toLowerCase() || 'user', // Para compatibilidade
+      profile: profile
+    }
+  } catch (error) {
+    console.error('Erro ao recuperar usuário atual:', error)
+    return null
+  }
+},
 
   getCurrentSession() {
     return supabase.auth.getSession()
