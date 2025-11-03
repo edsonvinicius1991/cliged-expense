@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, CheckCircle, Clock, Download, FileText, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -29,29 +29,67 @@ const getTasyCode = (unitName) => {
   return unitToTasyCodeMap[normalizedUnitName] || '';
 };
 
+import { db } from '@/lib/supabase';
+
 const ReportDetailsView = ({ report, onBack }) => {
   const { toast } = useToast();
+  const [detail, setDetail] = useState(report || null);
+  const [items, setItems] = useState([]);
+
+  // Carregar detalhes do relatório e itens a partir da base
+  useEffect(() => {
+    const load = async () => {
+      try {
+        if (!report?.id) {
+          setDetail(report || null);
+          setItems([]);
+          return;
+        }
+        const dbReport = await db.expenseReports.getById(report.id);
+        setDetail(dbReport || report);
+        const mapped = Array.isArray(dbReport?.expense_items)
+          ? dbReport.expense_items.map(it => ({
+              id: it.id,
+              category: it.category,
+              date: it.expense_date,
+              description: it.description,
+              amount: it.amount,
+              receipt_url: it.receipt_url,
+              receipt_filename: it.receipt_filename,
+            }))
+          : [];
+        setItems(mapped);
+      } catch (e) {
+        console.error('Falha ao carregar detalhes:', e);
+        setDetail(report || null);
+        setItems([]);
+      }
+    };
+    load();
+  }, [report]);
 
   const allExpenses = useMemo(() => {
+    if (items?.length) return items;
+    // Fallback para estrutura antiga
     const expenses = [
-      ...(report.transport || []).map(item => ({ ...item, category: 'Transporte', status: 'pending' })),
-      ...(report.food || []).map(item => ({ ...item, category: 'Alimentação', status: 'pending' })),
-      ...(report.miscellaneous || []).map(item => ({ ...item, category: 'Despesas com Viagem', status: 'pending' })),
-      ...(report.advances || []).map(item => ({ ...item, category: 'Despesas com Treinamento', status: 'pending' })),
+      ...(detail?.transport || []).map(item => ({ ...item, category: 'Transporte' })),
+      ...(detail?.food || []).map(item => ({ ...item, category: 'Alimentação' })),
+      ...(detail?.miscellaneous || []).map(item => ({ ...item, category: 'Despesas com Viagem' })),
+      ...(detail?.advances || []).map(item => ({ ...item, category: 'Despesas com Treinamento' })),
     ];
     return expenses;
-  }, [report]);
+  }, [items, detail]);
 
   const stats = useMemo(() => {
-    const status = report.status || 'pending';
-    const total = report.totalAmount + (report.totalAdvances || 0);
+    const status = (detail?.status || 'PENDENTE').toString().toUpperCase();
+    const total = Number(detail?.total_amount || 0);
     return {
       submitted: total,
-      approved: status === 'approved' ? total : 0,
-      rejected: status === 'rejected' ? total : 0,
-      pending: status === 'pending' ? total : 0,
+      approved: status === 'APROVADO' ? total : 0,
+      rejected: status === 'REJEITADO' ? total : 0,
+      pending: status === 'PENDENTE' ? total : 0,
     };
-  }, [report]);
+  }, [detail]);
 
   const pieData = [
     { name: 'Aprovado', value: stats.approved, color: '#95B8A3' },
@@ -144,11 +182,11 @@ const ReportDetailsView = ({ report, onBack }) => {
 
   const getStatusBadge = (status) => {
     const badges = {
-      pending: { label: 'Pendente', color: 'bg-warning text-warning-foreground', icon: Clock },
-      approved: { label: 'Aprovado', color: 'bg-success text-success-foreground', icon: CheckCircle },
-      rejected: { label: 'Rejeitado', color: 'bg-destructive text-destructive-foreground', icon: XCircle },
+      PENDENTE: { label: 'Pendente', color: 'bg-warning text-warning-foreground', icon: Clock },
+      APROVADO: { label: 'Aprovado', color: 'bg-success text-success-foreground', icon: CheckCircle },
+      REJEITADO: { label: 'Rejeitado', color: 'bg-destructive text-destructive-foreground', icon: XCircle },
     };
-    const badge = badges[status] || badges.pending;
+    const badge = badges[(status || '').toString().toUpperCase()] || badges.PENDENTE;
     const Icon = badge.icon;
     return (
       <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${badge.color}`}>
@@ -178,7 +216,7 @@ const ReportDetailsView = ({ report, onBack }) => {
             <Button variant="ghost" onClick={onBack}><ArrowLeft className="w-5 h-5 mr-2" />Voltar</Button>
             <div>
               <h1 className="text-xl font-bold text-foreground">Detalhes do Relatório</h1>
-              <p className="text-sm text-muted-foreground">Relatório de {report.userName} - {new Date(report.date).toLocaleDateString('pt-BR')}</p>
+              <p className="text-sm text-muted-foreground">Relatório de {detail?.userName || detail?.employee_name || ''} - {detail?.submission_date ? new Date(detail.submission_date).toLocaleDateString('pt-BR') : (detail?.created_at ? new Date(detail.created_at).toLocaleDateString('pt-BR') : '')}</p>
             </div>
           </div>
           <Button variant="outline" onClick={handleTasyExport}>
@@ -219,12 +257,12 @@ const ReportDetailsView = ({ report, onBack }) => {
                 <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow-custom-light border border-border">
                     <h3 className="text-lg font-bold text-foreground mb-4">Informações Gerais</h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-sm">
-                        <div><p className="text-muted-foreground">Colaborador</p><p className="font-semibold text-foreground">{report.userName}</p></div>
-                        <div><p className="text-muted-foreground">CPF</p><p className="font-semibold text-foreground">{report.cpf || 'N/A'}</p></div>
-                        <div><p className="text-muted-foreground">Unidade</p><p className="font-semibold text-foreground">{report.unit}</p></div>
-                        <div><p className="text-muted-foreground">Setor</p><p className="font-semibold text-foreground">{report.sector}</p></div>
-                        <div><p className="text-muted-foreground">Data de Envio</p><p className="font-semibold text-foreground">{new Date(report.createdAt).toLocaleString('pt-BR')}</p></div>
-                        <div className="col-span-2 md:col-span-3"><p className="text-muted-foreground">Motivo da Decisão</p><p className="font-semibold text-foreground">{report.rejectionReason || (report.status === 'approved' ? 'Aprovado sem ressalvas.' : 'Aguardando avaliação.')}</p></div>
+                        <div><p className="text-muted-foreground">Colaborador</p><p className="font-semibold text-foreground">{detail?.userName || detail?.employee_name || 'N/A'}</p></div>
+                        <div><p className="text-muted-foreground">CPF</p><p className="font-semibold text-foreground">{detail?.cpf || detail?.employee_cpf || 'N/A'}</p></div>
+                        <div><p className="text-muted-foreground">Unidade</p><p className="font-semibold text-foreground">{detail?.unit || detail?.department || ''}</p></div>
+                        <div><p className="text-muted-foreground">Setor</p><p className="font-semibold text-foreground">{detail?.sector || detail?.project_code || ''}</p></div>
+                        <div><p className="text-muted-foreground">Data de Envio</p><p className="font-semibold text-foreground">{detail?.submission_date ? new Date(detail.submission_date).toLocaleString('pt-BR') : (detail?.created_at ? new Date(detail.created_at).toLocaleString('pt-BR') : 'N/A')}</p></div>
+                        <div className="col-span-2 md:col-span-3"><p className="text-muted-foreground">Motivo da Decisão</p><p className="font-semibold text-foreground">{detail?.rejection_reason || ((detail?.status || '').toString().toUpperCase() === 'APROVADO' ? 'Aprovado sem ressalvas.' : 'Aguardando avaliação.')}</p></div>
                     </div>
                 </div>
             </div>
@@ -249,19 +287,19 @@ const ReportDetailsView = ({ report, onBack }) => {
                             {allExpenses.map((expense, index) => (
                                 <tr key={expense.id || index} className="border-b border-border hover:bg-muted">
                                     <td className="px-6 py-4 font-medium">{expense.category}</td>
-                                    <td className="px-6 py-4">{new Date(expense.date).toLocaleDateString('pt-BR')}</td>
+                                    <td className="px-6 py-4">{expense.date ? new Date(expense.date).toLocaleDateString('pt-BR') : ''}</td>
                                     <td className="px-6 py-4 max-w-xs truncate">{expense.description}</td>
                                     <td className="px-6 py-4 text-right font-mono">{formatCurrency(expense.amount)}</td>
                                     <td className="px-6 py-4 text-center">
-                                        {expense.receipt ? (
-                                            <Button variant="outline" size="sm" onClick={() => handleDownload(expense.receipt, expense)}>
+                                        {expense.receipt_url ? (
+                                            <Button variant="outline" size="sm" onClick={() => window.open(expense.receipt_url, '_blank')}>
                                                 <Download className="w-4 h-4" /> Download
                                             </Button>
                                         ) : (
                                             <span className="text-muted-foreground">N/A</span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 text-center">{getStatusBadge(report.status)}</td>
+                                    <td className="px-6 py-4 text-center">{getStatusBadge(detail?.status)}</td>
                                 </tr>
                             ))}
                             {allExpenses.length === 0 && (
