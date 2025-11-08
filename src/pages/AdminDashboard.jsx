@@ -110,10 +110,16 @@ import React, { useState, useEffect, useMemo } from 'react';
 
       const monthOptions = useMemo(() => {
         const options = new Set();
+        const getMonthKey = (r) => {
+          const dStr = r?.created_at || r?.submission_date || r?.period_end || r?.period_start;
+          if (!dStr) return null;
+          const d = new Date(dStr);
+          if (isNaN(d.getTime())) return null;
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        };
         reports.forEach(report => {
-          const date = new Date(report.date);
-          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-          options.add(monthKey);
+          const mk = getMonthKey(report);
+          if (mk) options.add(mk);
         });
         const sortedOptions = Array.from(options).sort().reverse();
         return sortedOptions.map(monthKey => {
@@ -126,15 +132,27 @@ import React, { useState, useEffect, useMemo } from 'react';
         });
     }, [reports]);
 
+      useEffect(() => {
+        if (monthOptions.length > 0 && !monthOptions.some(opt => opt.value === selectedMonth)) {
+          setSelectedMonth(monthOptions[0].value);
+        }
+      }, [monthOptions]);
+
       const stats = useMemo(() => {
         const pendingCount = reports.filter(r => normalizeStatusKey(r.status) === 'pending').length;
-        const currentMonth = new Date().toISOString().slice(0, 7);
-        const monthlyReports = reports.filter(r => 
-          r.created_at.slice(0, 7) === selectedMonth
-        );
+        const getMonthKey = (r) => {
+          const dStr = r?.created_at || r?.submission_date || r?.period_end || r?.period_start;
+          return dStr ? dStr.slice(0, 7) : '';
+        };
+        const monthlyReports = reports.filter(r => getMonthKey(r) === selectedMonth);
+        const getTotalAmount = (r) => {
+          const val = r?.total_amount ?? r?.totalAmount;
+          const num = typeof val === 'string' ? parseFloat(val) : val;
+          return Number.isFinite(num) ? num : 0;
+        };
         const totalApproved = monthlyReports
           .filter(r => normalizeStatusKey(r.status) === 'approved')
-          .reduce((sum, r) => sum + (r.amount_to_receive || 0), 0);
+          .reduce((sum, r) => sum + getTotalAmount(r), 0);
 
         return {
           pendingCount,
@@ -345,7 +363,7 @@ import React, { useState, useEffect, useMemo } from 'react';
                           <tr key={report.id} className="bg-white border-b border-border hover:bg-muted">
                             <td className="px-6 py-4 font-medium text-foreground whitespace-nowrap">{report.employee_name || report.userName || 'N/A'}</td>
                             <td className="px-6 py-4">{new Date(report.created_at).toLocaleDateString('pt-BR')}</td>
-                            <td className="px-6 py-4 font-semibold">{formatCurrency(report.total_amount || 0)}</td>
+                            <td className="px-6 py-4 font-semibold">{formatCurrency(((typeof report.total_amount === 'number' && report.total_amount) || (typeof report.totalAmount === 'number' && report.totalAmount) || 0))}</td>
                             <td className="px-6 py-4">{getStatusBadge(report.status)}</td>
                             <td className="px-6 py-4 text-center">
                               <div className="flex items-center justify-center gap-2">

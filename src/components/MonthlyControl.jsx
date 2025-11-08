@@ -70,51 +70,85 @@ const MonthlyControl = ({ reports }) => {
             total: 0
         };
     }).reverse();
-    
+
+    const normalizeStatusKey = (status) => {
+      const s = (status || '').toString().trim().toUpperCase();
+      if (s === 'PENDENTE' || s === 'PENDING') return 'pending';
+      if (s === 'APROVADO' || s === 'APPROVED') return 'approved';
+      if (s === 'REJEITADO' || s === 'REJECTED') return 'rejected';
+      return 'pending';
+    };
+    const getMonthKey = (r) => {
+      const dStr = r?.created_at || r?.submission_date || r?.period_end || r?.period_start || r?.date;
+      if (!dStr) return null;
+      const d = new Date(dStr);
+      if (isNaN(d.getTime())) return null;
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    };
+    const getTotalAmount = (r) => {
+      const val = r?.total_amount ?? r?.totalAmount;
+      const num = typeof val === 'string' ? parseFloat(val) : val;
+      return Number.isFinite(num) ? num : 0;
+    };
+
     const categorySpending = {};
     let totalApprovedThisMonth = 0;
+    const currentMonthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
 
     reports.forEach(report => {
-        const reportDate = new Date(report.date);
-        const month = reportDate.getMonth();
-        const year = reportDate.getFullYear();
+        if (normalizeStatusKey(report.status) !== 'approved') return;
+        const mk = getMonthKey(report);
+        if (!mk) return;
+        const [y, m] = mk.split('-');
+        const d = new Date(parseInt(y, 10), parseInt(m, 10) - 1, 1);
 
-        if (report.status === 'approved') {
-            const matchedMonth = monthlyTotals.find(m => m.month === month && m.year === year);
-            if (matchedMonth) {
-                const reportTotal = report.totalAmount || 0;
-                matchedMonth.total += reportTotal;
-                
-                if (month === currentMonth && year === currentYear) {
-                    totalApprovedThisMonth += reportTotal;
-                }
-            }
-
-            if (month === currentMonth && year === currentYear) {
-                ['transport', 'food', 'miscellaneous'].forEach(expenseType => {
-                    if (report[expenseType] && Array.isArray(report[expenseType])) {
-                        report[expenseType].forEach(item => {
-                            const mainCategory = normalizeCategory(item.category, expenseType);
-                            if (!categorySpending[mainCategory]) {
-                                categorySpending[mainCategory] = 0;
-                            }
-                            categorySpending[mainCategory] += item.amount || 0;
-                        });
-                    }
-                });
-                if (report.advances && Array.isArray(report.advances)) {
-                    const advancesTotal = report.advances.reduce((sum, item) => sum + (item.amount || 0), 0);
-                    if (advancesTotal > 0) {
-                        if (!categorySpending[CATEGORY_MAP.advances]) {
-                            categorySpending[CATEGORY_MAP.advances] = 0;
-                        }
-                        categorySpending[CATEGORY_MAP.advances] += advancesTotal;
-                    }
-                }
+        const matchedMonth = monthlyTotals.find(mm => mm.month === d.getMonth() && mm.year === d.getFullYear());
+        if (matchedMonth) {
+            const reportTotal = getTotalAmount(report);
+            matchedMonth.total += reportTotal;
+            if (mk === currentMonthKey) {
+                totalApprovedThisMonth += reportTotal;
             }
         }
+
+        if (mk === currentMonthKey) {
+          if (Array.isArray(report.expense_items)) {
+            report.expense_items.forEach(item => {
+              const catKey = (item.category || '').toString().toUpperCase();
+              const amount = parseFloat(item.amount || 0);
+              let mainCategory = CATEGORY_MAP.outros;
+              if (catKey === 'TRANSPORTE') mainCategory = CATEGORY_MAP.transport;
+              else if (catKey === 'ALIMENTACAO') mainCategory = CATEGORY_MAP.food;
+              else if (catKey === 'DIVERSOS') mainCategory = CATEGORY_MAP.miscellaneous;
+              else if (catKey === 'ADIANTAMENTOS') mainCategory = CATEGORY_MAP.advances;
+              if (!categorySpending[mainCategory]) categorySpending[mainCategory] = 0;
+              categorySpending[mainCategory] += amount;
+            });
+          } else {
+            ['transport', 'food', 'miscellaneous'].forEach(expenseType => {
+                if (report[expenseType] && Array.isArray(report[expenseType])) {
+                    report[expenseType].forEach(item => {
+                        const mainCategory = normalizeCategory(item.category, expenseType);
+                        if (!categorySpending[mainCategory]) {
+                            categorySpending[mainCategory] = 0;
+                        }
+                        categorySpending[mainCategory] += item.amount || 0;
+                    });
+                }
+            });
+            if (report.advances && Array.isArray(report.advances)) {
+                const advancesTotal = report.advances.reduce((sum, item) => sum + (item.amount || 0), 0);
+                if (advancesTotal > 0) {
+                    if (!categorySpending[CATEGORY_MAP.advances]) {
+                        categorySpending[CATEGORY_MAP.advances] = 0;
+                    }
+                    categorySpending[CATEGORY_MAP.advances] += advancesTotal;
+                }
+            }
+          }
+        }
     });
-    
+
     const topCategories = Object.entries(categorySpending)
         .sort(([, a], [, b]) => b - a)
         .slice(0, 5)
@@ -127,7 +161,7 @@ const MonthlyControl = ({ reports }) => {
     const currentMonthData = monthlyTotals.find(m => m.month === currentMonth && m.year === currentYear) || { total: 0 };
     const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const previousMonthData = monthlyTotals.find(m => m.month === previousMonthDate.getMonth() && m.year === previousMonthDate.getFullYear()) || { total: 0 };
-    
+
     const sixMonthAvg = monthlyTotals.reduce((sum, m) => sum + m.total, 0) / 6;
 
     return {

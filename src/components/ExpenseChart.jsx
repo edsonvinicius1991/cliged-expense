@@ -5,8 +5,21 @@ import { Briefcase, Utensils, PiggyBank, FileText, CheckCircle, XCircle } from '
 
 const ExpenseChart = ({ reports }) => {
   const chartData = useMemo(() => {
-    const approvedReports = reports.filter(r => r.status === 'approved');
-    const rejectedReports = reports.filter(r => r.status === 'rejected');
+    const normalizeStatusKey = (status) => {
+      const s = (status || '').toString().trim().toUpperCase();
+      if (s === 'PENDENTE' || s === 'PENDING') return 'pending';
+      if (s === 'APROVADO' || s === 'APPROVED') return 'approved';
+      if (s === 'REJEITADO' || s === 'REJECTED') return 'rejected';
+      return 'pending';
+    };
+    const getTotalAmount = (r) => {
+      const val = r?.total_amount ?? r?.totalAmount;
+      const num = typeof val === 'string' ? parseFloat(val) : val;
+      return Number.isFinite(num) ? num : 0;
+    };
+
+    const approvedReports = reports.filter(r => normalizeStatusKey(r.status) === 'approved');
+    const rejectedReports = reports.filter(r => normalizeStatusKey(r.status) === 'rejected');
 
     const data = {
       transport: 0,
@@ -15,13 +28,23 @@ const ExpenseChart = ({ reports }) => {
     };
 
     approvedReports.forEach(report => {
-      (report.transport || []).forEach(item => data.transport += parseFloat(item.amount || 0));
-      (report.food || []).forEach(item => data.food += parseFloat(item.amount || 0));
-      (report.miscellaneous || []).forEach(item => data.miscellaneous += parseFloat(item.amount || 0));
+      if (Array.isArray(report.expense_items)) {
+        report.expense_items.forEach(item => {
+          const cat = (item.category || '').toString().toUpperCase();
+          const amount = parseFloat(item.amount || 0);
+          if (cat === 'TRANSPORTE') data.transport += amount;
+          else if (cat === 'ALIMENTACAO') data.food += amount;
+          else if (cat === 'DIVERSOS') data.miscellaneous += amount;
+        });
+      } else {
+        (report.transport || []).forEach(item => data.transport += parseFloat(item.amount || 0));
+        (report.food || []).forEach(item => data.food += parseFloat(item.amount || 0));
+        (report.miscellaneous || []).forEach(item => data.miscellaneous += parseFloat(item.amount || 0));
+      }
     });
 
     const totalApproved = data.transport + data.food + data.miscellaneous;
-    const totalRejected = rejectedReports.reduce((sum, r) => sum + (r.totalAmount || 0), 0);
+    const totalRejected = rejectedReports.reduce((sum, r) => sum + getTotalAmount(r), 0);
 
     const categories = [
       { name: 'Transporte', value: data.transport, color: '#81b29a', icon: Briefcase },
