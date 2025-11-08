@@ -149,44 +149,51 @@ import React, { useState, useEffect, useMemo } from 'react';
       };
 
       const confirmApproval = async (approved, reason = '') => {
-        try {
-          const updateData = {
-            // Persistir status em PT-BR para manter consistência com outros módulos
-            status: approved ? 'APROVADO' : 'REJEITADO',
-            rejection_reason: approved ? null : reason,
-            approved_by: approved ? user.id : null,
-            approved_at: approved ? new Date().toISOString() : null
-          };
+        // Base com valores aceitos pelo check constraint do banco (PT-BR)
+        const baseUpdate = {
+          status: approved ? 'APROVADO' : 'REJEITADO',
+          rejection_reason: approved ? null : reason,
+        };
+        const auditUpdate = {
+          approved_by: approved ? user.id : null,
+          approved_at: approved ? new Date().toISOString() : null,
+        };
 
-          await db.expenseReports.update(selectedReport.id, updateData);
-          
-          // Atualizar a lista local
-          const updatedReports = reports.map(r => {
-            if (r.id === selectedReport.id) {
-              return {
-                ...r,
-                ...updateData
-              };
+        try {
+          // 1) Atualiza o status/reason (compatível com constraint)
+          const updatedBase = await db.expenseReports.update(selectedReport.id, baseUpdate);
+          let merged = { ...updatedBase };
+
+          // 2) Tenta adicionar campos de auditoria; ignora se colunas não existirem
+          try {
+            const updatedAudit = await db.expenseReports.update(selectedReport.id, auditUpdate);
+            merged = { ...merged, ...updatedAudit };
+          } catch (auditError) {
+            const msg = auditError?.message || '';
+            const missingColumn = msg.includes('Could not find') || auditError?.code === 'PGRST204';
+            if (!missingColumn) {
+              // Outro erro que não é coluna inexistente
+              console.error('Erro ao atualizar campos de auditoria:', auditError);
             }
-            return r;
-          });
-          
+          }
+
+          const updatedReports = reports.map(r => (r.id === selectedReport.id ? { ...r, ...merged } : r));
           setReports(updatedReports);
+
           setShowApprovalDialog(false);
           setSelectedReport(null);
           setApprovalAction(null);
-          
           toast({
-            title: `Relatório ${approved ? "aprovado" : "rejeitado"}!`,
-            description: `O colaborador será notificado.`,
-            className: approved ? 'bg-success text-success-foreground' : 'bg-destructive text-destructive-foreground'
+            title: `Relatório ${approved ? 'aprovado' : 'rejeitado'}!`,
+            description: 'O colaborador será notificado.',
+            className: approved ? 'bg-success text-success-foreground' : 'bg-destructive text-destructive-foreground',
           });
-        } catch (error) {
-          console.error('Erro ao atualizar relatório:', error);
+        } catch (err) {
+          console.error('Erro ao atualizar relatório:', err);
           toast({
-            title: "Erro",
-            description: "Não foi possível atualizar o relatório. Tente novamente.",
-            variant: "destructive",
+            title: 'Erro',
+            description: 'Não foi possível atualizar o relatório. Tente novamente.',
+            variant: 'destructive',
           });
         }
       };
