@@ -37,30 +37,32 @@ import React, { useState, useEffect } from 'react';
     }
   };
 
-      const getStatusBadge = status => {
+      // Normaliza o status para uma chave canônica usada na UI
+      const normalizeStatusKey = (status) => {
+        const s = (status || '').toString().trim().toUpperCase();
+        if (s === 'PENDENTE' || s === 'PENDING') return 'pending';
+        if (s === 'APROVADO' || s === 'APPROVED') return 'approved';
+        if (s === 'REJEITADO' || s === 'REJECTED') return 'rejected';
+        if (s === 'AGUARDANDO_PAGAMENTO' || s === 'AWAITING_PAYMENT' || s === 'AGUARDANDO PAGAMENTO') return 'awaiting_payment';
+        return 'pending';
+      };
+
+      const getStatusBadge = (status) => {
         const badges = {
-          pending: {
-            label: 'Pendente',
-            color: 'bg-warning text-warning-foreground',
-            icon: Clock
-          },
-          approved: {
-            label: 'Aprovado',
-            color: 'bg-success text-success-foreground',
-            icon: CheckCircle
-          },
-          rejected: {
-            label: 'Rejeitado',
-            color: 'bg-destructive text-destructive-foreground',
-            icon: XCircle
-          }
+          pending: { label: 'Pendente', color: 'bg-warning text-warning-foreground', icon: Clock },
+          approved: { label: 'Aprovado', color: 'bg-success text-success-foreground', icon: CheckCircle },
+          rejected: { label: 'Rejeitado', color: 'bg-destructive text-destructive-foreground', icon: XCircle },
+          awaiting_payment: { label: 'Aguardando Pagamento', color: 'bg-primary text-primary-foreground', icon: DollarSign },
         };
-        const badge = badges[status] || badges.pending;
+        const key = normalizeStatusKey(status);
+        const badge = badges[key] || badges.pending;
         const Icon = badge.icon;
-        return <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${badge.color}`}>
+        return (
+          <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${badge.color}`}>
             <Icon className="w-3 h-3" />
             {badge.label}
-          </span>;
+          </span>
+        );
       };
 
       const formatCurrency = value => {
@@ -165,8 +167,8 @@ import React, { useState, useEffect } from 'react';
               }} transition={{
                 delay: index * 0.1
               }} className="border border-border rounded-lg p-5 hover:shadow-md transition-shadow cursor-pointer bg-white hover:bg-muted" onClick={() => onEditReport(report)}>
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
+                      <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
+                        <div className="flex-1 min-w-0">
                           <h3 className="font-semibold text-foreground text-lg mb-1">
                             Relatório #{report.id.toString().slice(0, 8)}
                           </h3>
@@ -183,7 +185,9 @@ import React, { useState, useEffect } from 'react';
                             )}
                           </div>
                         </div>
-                        {getStatusBadge(report.status)}
+                        <div className="shrink-0">
+                          {getStatusBadge(report.status)}
+                        </div>
                       </div>
                       
                       <div className="grid grid-cols-3 gap-4 pt-3 border-t border-border">
