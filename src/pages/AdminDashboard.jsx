@@ -78,6 +78,16 @@ import React, { useState, useEffect, useMemo } from 'react';
         }
       };
 
+      // Normaliza o status para uma chave canônica usada na UI e filtros
+      const normalizeStatusKey = (status) => {
+        const s = (status || '').toString().trim().toUpperCase();
+        if (s === 'PENDENTE' || s === 'PENDING') return 'pending';
+        if (s === 'APROVADO' || s === 'APPROVED') return 'approved';
+        if (s === 'REJEITADO' || s === 'REJECTED') return 'rejected';
+        if (s === 'AGUARDANDO_PAGAMENTO' || s === 'AWAITING_PAYMENT') return 'awaiting_payment';
+        return 'pending';
+      };
+
       const filteredReports = useMemo(() => {
         return reports.filter(report => {
           if (report.status === 'draft') return false;
@@ -87,7 +97,7 @@ import React, { useState, useEffect, useMemo } from 'react';
           const term = (searchTerm || '').toLowerCase();
           const searchMatch = term === '' || name.includes(term) || idStr.includes(term);
 
-          const statusMatch = statusFilter === 'all' || report.status === statusFilter;
+          const statusMatch = statusFilter === 'all' || normalizeStatusKey(report.status) === statusFilter;
 
           return searchMatch && statusMatch;
         });
@@ -117,13 +127,13 @@ import React, { useState, useEffect, useMemo } from 'react';
     }, [reports]);
 
       const stats = useMemo(() => {
-        const pendingCount = reports.filter(r => r.status === 'pending').length;
+        const pendingCount = reports.filter(r => normalizeStatusKey(r.status) === 'pending').length;
         const currentMonth = new Date().toISOString().slice(0, 7);
         const monthlyReports = reports.filter(r => 
           r.created_at.slice(0, 7) === selectedMonth
         );
         const totalApproved = monthlyReports
-          .filter(r => r.status === 'approved')
+          .filter(r => normalizeStatusKey(r.status) === 'approved')
           .reduce((sum, r) => sum + (r.amount_to_receive || 0), 0);
 
         return {
@@ -141,7 +151,8 @@ import React, { useState, useEffect, useMemo } from 'react';
       const confirmApproval = async (approved, reason = '') => {
         try {
           const updateData = {
-            status: approved ? 'approved' : 'rejected',
+            // Persistir status em PT-BR para manter consistência com outros módulos
+            status: approved ? 'APROVADO' : 'REJEITADO',
             rejection_reason: approved ? null : reason,
             approved_by: approved ? user.id : null,
             approved_at: approved ? new Date().toISOString() : null
@@ -235,7 +246,8 @@ import React, { useState, useEffect, useMemo } from 'react';
           approved: { label: 'Aprovado', color: 'bg-success text-success-foreground', icon: CheckCircle },
           rejected: { label: 'Rejeitado', color: 'bg-destructive text-destructive-foreground', icon: XCircle }
         };
-        const badge = badges[status] || badges.pending;
+        const key = normalizeStatusKey(status);
+        const badge = badges[key] || badges.pending;
         const Icon = badge.icon;
         return (
           <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${badge.color}`}>
@@ -333,7 +345,7 @@ import React, { useState, useEffect, useMemo } from 'react';
                                 <Button variant="outline" size="icon" onClick={() => onViewDetails(report)}>
                                   <ClipboardList className="w-4 h-4" />
                                 </Button>
-                                {report.status === 'pending' && (
+                                {normalizeStatusKey(report.status) === 'pending' && (
                                   <>
                                     <Button variant="outline" size="icon" className="text-success-foreground bg-success hover:bg-success/90 border-0" onClick={() => handleApprovalAction(report, 'approve')}>
                                       <CheckCircle className="w-4 h-4" />
