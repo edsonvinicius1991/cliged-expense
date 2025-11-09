@@ -79,7 +79,7 @@ const MonthlyControl = ({ reports }) => {
       return 'pending';
     };
     const getMonthKey = (r) => {
-      const dStr = r?.created_at || r?.submission_date || r?.period_end || r?.period_start || r?.date;
+      const dStr = r?.period_start || r?.created_at || r?.submission_date || r?.period_end || r?.period_start || r?.date;
       if (!dStr) return null;
       const d = new Date(dStr);
       if (isNaN(d.getTime())) return null;

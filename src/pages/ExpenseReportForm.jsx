@@ -200,7 +200,13 @@ import React, { useState, useEffect } from 'react';
               }
 
               setFormData({
-                date: detailedReport?.period_start ? detailedReport.period_start.split('T')[0] : (detailedReport?.created_at ? detailedReport.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+                date: detailedReport?.period_start
+                  ? detailedReport.period_start.split('T')[0]
+                  : (detailedReport?.period_start
+                      ? detailedReport.period_start.split('T')[0]
+                      : (detailedReport?.created_at
+                          ? detailedReport.created_at.split('T')[0]
+                          : new Date().toISOString().split('T')[0])),
                 userName: detailedReport?.employee_name || user?.username || user?.email?.split('@')[0] || '',
                 cpf: formatCpfDigits(detailedReport?.employee_cpf || ''),
                 unit: detailedReport?.department || '',

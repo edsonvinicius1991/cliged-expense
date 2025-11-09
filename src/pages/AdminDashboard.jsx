@@ -111,7 +111,7 @@ import React, { useState, useEffect, useMemo } from 'react';
       const monthOptions = useMemo(() => {
         const options = new Set();
         const getMonthKey = (r) => {
-          const dStr = r?.created_at || r?.submission_date || r?.period_end || r?.period_start;
+          const dStr = r?.period_start || r?.created_at || r?.submission_date || r?.period_end || r?.period_start;
           if (!dStr) return null;
           const d = new Date(dStr);
           if (isNaN(d.getTime())) return null;
@@ -141,7 +141,7 @@ import React, { useState, useEffect, useMemo } from 'react';
       const stats = useMemo(() => {
         const pendingCount = reports.filter(r => normalizeStatusKey(r.status) === 'pending').length;
         const getMonthKey = (r) => {
-          const dStr = r?.created_at || r?.submission_date || r?.period_end || r?.period_start;
+          const dStr = r?.period_start || r?.created_at || r?.submission_date || r?.period_end || r?.period_start;
           return dStr ? dStr.slice(0, 7) : '';
         };
         const monthlyReports = reports.filter(r => getMonthKey(r) === selectedMonth);
