@@ -306,7 +306,7 @@ import React, { useState, useEffect, useMemo } from 'react';
               <div className="container mx-auto px-4 py-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <img src="https://horizons-cdn.hostinger.com/55c4ad92-877a-433d-b426-bfb11b6e624b/cee09543a309484cf4baa2c2eb1babb9.png" alt="CLIGED Logo" style={{ height: '50px' }} />
+                    <img src="/amplus-logo-svg.svg" alt="Amplus Solutions Logo" style={{ height: '50px' }} />
                   </div>
                   <div className="flex items-center gap-4">
                     <p className="text-sm text-muted-foreground hidden sm:block">Olá, <span className="font-semibold text-foreground">{user.name}</span>!</p>

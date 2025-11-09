@@ -9,7 +9,7 @@ const HomePage = ({ onSelectUserType }) => {
       <header className="bg-white shadow-sm border-b border-border">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <img src="https://horizons-cdn.hostinger.com/55c4ad92-877a-433d-b426-bfb11b6e624b/cee09543a309484cf4baa2c2eb1babb9.png" alt="CLIGED Logo" style={{ height: '60px' }} />
+<img src="/amplus-logo-svg.svg" alt="Amplus Solutions Logo" style={{ height: '60px' }} />
           </div>
         </div>
       </header>
