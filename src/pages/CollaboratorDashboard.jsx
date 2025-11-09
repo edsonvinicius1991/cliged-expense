@@ -139,7 +139,20 @@ import React, { useState, useEffect } from 'react';
                 <StatCard title="Pendentes" value={statusCounts.pending} icon={Clock} colorClass="text-warning-foreground" delay={0.2} />
                 <StatCard title="Aprovados" value={statusCounts.approved} icon={CheckCircle} colorClass="text-secondary" delay={0.3} />
                 <StatCard title="Rejeitados" value={statusCounts.rejected} icon={XCircle} colorClass="text-destructive" delay={0.4} />
-                <StatCard title="A Receber" value={statusCounts.awaitingPayment} icon={DollarSign} colorClass="text-primary" delay={0.5} />
+                <StatCard
+                  title="A Receber"
+                  value={formatCurrency((reports || []).reduce((acc, r) => {
+                    const st = (r?.status || '').toString().trim().toUpperCase();
+                    const isApproved = st === 'APROVADO' || st === 'APPROVED';
+                    if (!isApproved) return acc;
+                    const receive = typeof r?.amount_to_receive === 'number' ? r.amount_to_receive : 0;
+                    const total = typeof r?.total_amount === 'number' ? r.total_amount : 0;
+                    return acc + (receive || total);
+                  }, 0))}
+                  icon={DollarSign}
+                  colorClass="text-primary"
+                  delay={0.5}
+                />
             </div>
 
             <div className="bg-white rounded-lg shadow-custom-light border border-border p-5 mb-6">
